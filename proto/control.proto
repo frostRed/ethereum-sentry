@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+import "common.proto";
+
+package control;
+
+message InboundMessageData {
+  common.MessageData data = 1;
+  bytes peer_id = 2;
+}
+
+message StatusData {
+  bytes total_difficulty = 1;
+  bytes genesis_hash = 2;
+  bytes best_hash = 3;
+}
+
+service Control {
+  rpc ForwardInboundMessage(InboundMessageData) returns (google.protobuf.Empty);
+  rpc GetStatus(google.protobuf.Empty) returns (StatusData);
+}

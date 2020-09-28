@@ -1,0 +1,30 @@
+[package]
+name = "ethereum-sentry"
+version = "0.1.0"
+authors = ["Artem Vorotnikov <artem@vorotnikov.me>"]
+edition = "2018"
+description = "Sentry that connects to Ethereum network"
+license = "Apache-2.0"
+
+[dependencies]
+arrayvec = "0.5"
+devp2p = { git = "https://github.com/rust-ethereum/devp2p", features = ["dnsdisc"] }
+dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust-dns"] }
+ethereum = { git = "https://github.com/rust-blockchain/ethereum" }
+ethereum-types = "0.9"
+futures = "0.3"
+hex-literal = "0.3"
+k256 = { version = "0.5", features = ["ecdsa"] }
+maplit = "1"
+rand = "0.7"
+rlp = "0.4"
+rlp-derive = "0.1"
+sha3 = "0.9"
+tokio = { version = "0.2", features = ["full"] }
+tonic = { version = "0.3", features = ["tls"] }
+tonic-health = "0.2"
+tracing-subscriber = "0.2"
+trust-dns-resolver = "0.19"
+
+[build-dependencies]
+tonic-build = "0.3"

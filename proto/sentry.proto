@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+import "common.proto";
+
+package sentry;
+
+message SendMessageByFilterRequest {
+  common.MessageData data = 1;
+  string attribute = 2;
+  uint64 min_attribute_value = 3;
+}
+
+message SendMessageByIdRequest {
+  common.MessageData data = 1;
+  bytes peer_id = 2;
+}
+
+message SendMessageToRandomPeersRequest {
+  common.MessageData data = 1;
+  uint64 max_peers = 2;
+}
+
+message SetAttributeRequest {
+  string peer_id = 1;
+  string key = 2;
+  uint64 value = 3;
+}
+
+enum PenaltyKind { Kick = 0; }
+
+message PenalizePeerRequest {
+  string peer_id = 1;
+  PenaltyKind penalty = 2;
+}
+
+service Sentry {
+  rpc SetAttribute(SetAttributeRequest) returns (google.protobuf.Empty);
+  rpc PenalizePeer(PenalizePeerRequest) returns (google.protobuf.Empty);
+  rpc SendMessageByFilter(SendMessageByFilterRequest)
+      returns (google.protobuf.Empty);
+  rpc SendMessageById(SendMessageByIdRequest) returns (google.protobuf.Empty);
+  rpc SendMessageToRandomPeers(SendMessageToRandomPeersRequest)
+      returns (google.protobuf.Empty);
+  rpc SendMessageToAll(common.MessageData) returns (google.protobuf.Empty);
+}
