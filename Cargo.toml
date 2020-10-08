@@ -7,15 +7,24 @@ description = "Sentry that connects to Ethereum network"
 license = "Apache-2.0"
 
 [dependencies]
+anyhow = "1"
 arrayvec = "0.5"
+async-trait = "0.1"
+clap = "3.0.0-beta.2"
+derivative = "2"
 devp2p = { git = "https://github.com/rust-ethereum/devp2p", features = ["dnsdisc"] }
 dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust-dns"] }
+enum-primitive-derive = "0.2"
 ethereum = { git = "https://github.com/rust-blockchain/ethereum" }
 ethereum-types = "0.9"
 futures = "0.3"
+hex = "*"
 hex-literal = "0.3"
 k256 = { version = "0.5", features = ["ecdsa"] }
 maplit = "1"
+num-traits = "0.2"
+plain_hasher = "0.2"
+prost = "0.6"
 rand = "0.7"
 rlp = "0.4"
 rlp-derive = "0.1"
@@ -23,6 +32,8 @@ sha3 = "0.9"
 tokio = { version = "0.2", features = ["full"] }
 tonic = { version = "0.3", features = ["tls"] }
 tonic-health = "0.2"
+tracing = "0.1"
+tracing-futures = "*"
 tracing-subscriber = "0.2"
 trust-dns-resolver = "0.19"
 

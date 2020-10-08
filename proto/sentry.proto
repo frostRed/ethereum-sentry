@@ -5,19 +5,29 @@ import "common.proto";
 
 package sentry;
 
+enum OutboundMessageId {
+  GetBlockHeaders = 0;
+  GetBlockBodies = 1;
+}
+
+message OutboundMessageData {
+  OutboundMessageId id = 1;
+  bytes data = 2;
+}
+
 message SendMessageByFilterRequest {
-  common.MessageData data = 1;
+  OutboundMessageData data = 1;
   string attribute = 2;
   uint64 min_attribute_value = 3;
 }
 
 message SendMessageByIdRequest {
-  common.MessageData data = 1;
+  OutboundMessageData data = 1;
   bytes peer_id = 2;
 }
 
 message SendMessageToRandomPeersRequest {
-  common.MessageData data = 1;
+  OutboundMessageData data = 1;
   uint64 max_peers = 2;
 }
 
@@ -42,5 +52,5 @@ service Sentry {
   rpc SendMessageById(SendMessageByIdRequest) returns (google.protobuf.Empty);
   rpc SendMessageToRandomPeers(SendMessageToRandomPeersRequest)
       returns (google.protobuf.Empty);
-  rpc SendMessageToAll(common.MessageData) returns (google.protobuf.Empty);
+  rpc SendMessageToAll(OutboundMessageData) returns (google.protobuf.Empty);
 }
