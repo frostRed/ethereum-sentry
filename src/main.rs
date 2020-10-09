@@ -63,7 +63,7 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
 
         PeerConnectOutcome::Disavow
     }
-    #[instrument(skip(peer, message), level = "debug", name = "ingress", fields(peer=&*peer.id.to_string(), id=message.id))]
+    #[instrument(skip(self, peer, message), level = "debug", fields(peer=&*peer.id.to_string(), id=message.id))]
     async fn on_ingress_message(
         &self,
         peer: IngressPeer,
@@ -191,9 +191,7 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env().add_directive("ethereum_sentry=info".parse().unwrap()),
-        )
+        .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     let opts = Opts::parse();
