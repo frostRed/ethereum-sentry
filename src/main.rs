@@ -1,27 +1,23 @@
 #![allow(dead_code)]
 
-use crate::{
-    config::*,
-    eth::*,
-    grpc::control::{InboundMessage, StatusData},
-    services::*,
-};
+use crate::{config::*, eth::*, grpc::control::InboundMessage, services::*};
 use anyhow::{anyhow, bail, Context};
 use arrayvec::ArrayString;
 use async_trait::async_trait;
 use clap::Clap;
 use devp2p::*;
 use futures::stream::StreamExt;
-use hex_literal::hex;
 use k256::ecdsa::SigningKey;
 use num_traits::{FromPrimitive, ToPrimitive};
+use parking_lot::RwLock;
 use rand::rngs::OsRng;
 use rlp::Rlp;
 use std::{
-    convert::{identity, TryFrom, TryInto},
+    convert::{identity, TryInto},
     sync::Arc,
     time::Duration,
 };
+use task_group::TaskGroup;
 use tracing::*;
 use tracing_subscriber::EnvFilter;
 use trust_dns_resolver::{config::*, TokioAsyncResolver};
@@ -41,20 +37,14 @@ impl Control for DummyControl {
         debug!("Received inbound message: {:?}", message);
         Ok(())
     }
-    async fn get_status(&self) -> anyhow::Result<StatusData> {
-        Ok(StatusData {
-            network_id: 1,
-            total_difficulty: 17608636743620256866935_u128.to_be_bytes().to_vec(),
-            best_hash: hex!("28042e7e4d35a3482bf5f0d862501868b04c1734f483ceae3bf1393561951829")
-                .to_vec(),
-            genesis_hash: hex!("d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3")
-                .to_vec(),
-        })
+    async fn get_status_data(&self) -> anyhow::Result<StatusData> {
+        bail!("Not implemented")
     }
 }
 
 #[derive(Debug)]
 struct CapabilityServerImpl<C, DP> {
+    status_message: Arc<RwLock<Option<StatusMessage>>>,
     control: C,
     data_provider: DP,
 }
@@ -62,15 +52,13 @@ struct CapabilityServerImpl<C, DP> {
 #[async_trait]
 impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, DP> {
     async fn on_peer_connect(&self, _: PeerId) -> PeerConnectOutcome {
-        if let Ok(status_data) = self.control.get_status().await {
-            if let Ok(status_message) = StatusMessage::try_from(status_data) {
-                return PeerConnectOutcome::Retain {
-                    hello: Some(Message {
-                        id: 0,
-                        data: rlp::encode(&status_message).into(),
-                    }),
-                };
-            }
+        if let Some(status_message) = self.status_message.read().clone() {
+            return PeerConnectOutcome::Retain {
+                hello: Some(Message {
+                    id: 0,
+                    data: rlp::encode(&status_message).into(),
+                }),
+            };
         }
 
         PeerConnectOutcome::Disavow
@@ -229,7 +217,10 @@ async fn main() -> anyhow::Result<()> {
 
     let discovery = DnsDiscovery::new(Arc::new(dns_resolver), opts.dnsdisc_address, None);
 
+    let tasks = Arc::new(TaskGroup::new());
+
     let client = RLPxNodeBuilder::new()
+        .with_task_group(tasks.clone())
         .with_listen_options(ListenOptions {
             discovery: Some(DiscoveryOptions {
                 discovery: Arc::new(tokio::sync::Mutex::new(discovery)),
@@ -242,7 +233,7 @@ async fn main() -> anyhow::Result<()> {
         .build(secret_key)
         .await?;
 
-    let data_provider: Box<dyn DataProvider> = if let Some(addr) = opts.web3_addr {
+    let data_provider: Arc<dyn DataProvider> = if let Some(addr) = opts.web3_addr {
         if addr.scheme() != "http" && addr.scheme() != "https" {
             bail!(
                 "Invalid web3 data provider URL: {}. Should start with http:// or https://.",
@@ -251,12 +242,58 @@ async fn main() -> anyhow::Result<()> {
         }
         let addr = addr.to_string();
         info!("Using web3 data provider at {}", addr);
-        Box::new(Web3DataProvider::new(addr).context("Failed to start web3 data provider")?)
+        Arc::new(Web3DataProvider::new(addr).context("Failed to start web3 data provider")?)
     } else {
-        Box::new(DummyDataProvider)
+        Arc::new(DummyDataProvider)
     };
 
+    let control: Arc<dyn Control> = Arc::new(DummyControl);
+
     info!("RLPx node listening at {}", opts.listen_addr);
+
+    let status_message: Arc<RwLock<Option<StatusMessage>>> = Default::default();
+
+    tasks.spawn_with_name(
+        {
+            let status_message = status_message.clone();
+            let control = control.clone();
+            let data_provider = data_provider.clone();
+            async move {
+                loop {
+                    let mut s = None;
+                    match control.get_status_data().await {
+                        Err(e) => {
+                            debug!(
+                                "Failed to get status from control, trying from data provider: {}",
+                                e
+                            );
+                            match data_provider.get_status_data().await {
+                                Err(e) => {
+                                    debug!("Failed to fetch status from data provider: {}", e);
+                                }
+                                Ok(v) => {
+                                    s = Some(v);
+                                }
+                            }
+                        }
+                        Ok(v) => {
+                            s = Some(v);
+                        }
+                    }
+
+                    if let Some(s) = &s {
+                        debug!("Setting status data to {:?}", s);
+                    } else {
+                        warn!("Failed to fetch status data, server will not accept new peers.");
+                    }
+                    *status_message.write() = s.map(From::from);
+
+                    tokio::time::delay_for(Duration::from_secs(5)).await;
+                }
+            }
+        },
+        "Status updater".into(),
+    );
 
     let _handle = client.register(
         CapabilityInfo {
@@ -265,7 +302,8 @@ async fn main() -> anyhow::Result<()> {
             length: 17,
         },
         Arc::new(CapabilityServerImpl {
-            control: DummyControl,
+            status_message,
+            control,
             data_provider,
         }),
     );

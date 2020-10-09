@@ -1,8 +1,6 @@
-use crate::grpc::control::StatusData;
 use enum_primitive_derive::*;
 use ethereum_types::*;
 use rlp_derive::*;
-use std::convert::TryFrom;
 
 #[derive(Clone, Debug, RlpEncodable, RlpDecodable)]
 pub struct StatusMessage {
@@ -13,17 +11,23 @@ pub struct StatusMessage {
     pub genesis_hash: H256,
 }
 
-impl TryFrom<StatusData> for StatusMessage {
-    type Error = anyhow::Error;
+#[derive(Clone, Debug)]
+pub struct StatusData {
+    pub network_id: u64,
+    pub total_difficulty: U256,
+    pub best_hash: H256,
+    pub genesis_hash: H256,
+}
 
-    fn try_from(value: StatusData) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<StatusData> for StatusMessage {
+    fn from(value: StatusData) -> Self {
+        Self {
             protocol_version: 63,
             network_id: value.network_id,
-            total_difficulty: hex::encode(value.total_difficulty).parse()?,
-            best_hash: hex::encode(value.best_hash).parse()?,
-            genesis_hash: hex::encode(value.genesis_hash).parse()?,
-        })
+            total_difficulty: value.total_difficulty,
+            best_hash: value.best_hash,
+            genesis_hash: value.genesis_hash,
+        }
     }
 }
 

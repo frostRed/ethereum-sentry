@@ -1,5 +1,7 @@
-use anyhow::{anyhow, ensure, Context};
+use crate::eth::StatusData;
+use anyhow::{anyhow, bail, ensure, Context};
 use async_trait::async_trait;
+use auto_impl::auto_impl;
 use ethereum::{Header, Transaction};
 use ethereum_types::{H256, U64};
 use futures::{
@@ -60,25 +62,12 @@ pub struct BlockBody {
 
 /// Provider of Ethereum blockchain data.
 #[async_trait]
+#[auto_impl(&, Box, Arc)]
 pub trait DataProvider: Debug + Send + Sync + 'static {
+    async fn get_status_data(&self) -> anyhow::Result<StatusData>;
     async fn resolve_block_height(&self, block: H256) -> anyhow::Result<Option<u64>>;
     fn get_block_headers(&self, blocks: Vec<BlockId>) -> BoxStream<anyhow::Result<Header>>;
     fn get_block_bodies(&self, block: Vec<H256>) -> BoxStream<anyhow::Result<BlockBody>>;
-}
-
-#[async_trait]
-impl<T: DataProvider + ?Sized> DataProvider for Box<T> {
-    async fn resolve_block_height(&self, block: H256) -> anyhow::Result<Option<u64>> {
-        (**self).resolve_block_height(block).await
-    }
-
-    fn get_block_headers(&self, blocks: Vec<BlockId>) -> BoxStream<anyhow::Result<Header>> {
-        (**self).get_block_headers(blocks)
-    }
-
-    fn get_block_bodies(&self, block: Vec<H256>) -> BoxStream<anyhow::Result<BlockBody>> {
-        (**self).get_block_bodies(block)
-    }
 }
 
 #[derive(Debug)]
@@ -86,6 +75,10 @@ pub struct DummyDataProvider;
 
 #[async_trait]
 impl DataProvider for DummyDataProvider {
+    async fn get_status_data(&self) -> anyhow::Result<StatusData> {
+        bail!("Not implemented")
+    }
+
     async fn resolve_block_height(&self, _: H256) -> anyhow::Result<Option<u64>> {
         Ok(None)
     }
@@ -93,6 +86,7 @@ impl DataProvider for DummyDataProvider {
     fn get_block_headers(&self, _: Vec<BlockId>) -> BoxStream<anyhow::Result<Header>> {
         Box::pin(futures::stream::iter(vec![]))
     }
+
     fn get_block_bodies(&self, _: Vec<H256>) -> BoxStream<anyhow::Result<BlockBody>> {
         Box::pin(futures::stream::iter(vec![]))
     }
@@ -134,6 +128,48 @@ fn web3_block_to_header<TX>(block: web3::types::Block<TX>) -> Option<Header> {
 
 #[async_trait]
 impl DataProvider for Web3DataProvider {
+    async fn get_status_data(&self) -> anyhow::Result<StatusData> {
+        let (network_id, (total_difficulty, best_hash), genesis_hash) = futures::future::try_join3(
+            async { Ok::<_, anyhow::Error>(1) },
+            async {
+                let best_block_number = self.client.eth().block_number().await?.as_u64();
+                let best_block = self
+                    .client
+                    .eth()
+                    .block(U64::from(best_block_number).into())
+                    .await?
+                    .ok_or_else(|| anyhow!("no current block?"))?;
+
+                Ok((
+                    best_block
+                        .total_difficulty
+                        .ok_or_else(|| anyhow!("no total difficulty in best block"))?,
+                    best_block
+                        .hash
+                        .ok_or_else(|| anyhow!("no best block hash?"))?,
+                ))
+            },
+            async {
+                Ok(self
+                    .client
+                    .eth()
+                    .block(U64::from(0_u64).into())
+                    .await?
+                    .ok_or_else(|| anyhow!("no genesis block?"))?
+                    .hash
+                    .ok_or_else(|| anyhow!("no genesis block hash?"))?)
+            },
+        )
+        .await?;
+
+        Ok(StatusData {
+            network_id,
+            total_difficulty,
+            best_hash,
+            genesis_hash,
+        })
+    }
+
     async fn resolve_block_height(&self, block: H256) -> anyhow::Result<Option<u64>> {
         Ok(self
             .client
