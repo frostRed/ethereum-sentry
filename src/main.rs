@@ -6,7 +6,7 @@ use crate::{
     grpc::control::{InboundMessage, StatusData},
     services::*,
 };
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use arrayvec::ArrayString;
 use async_trait::async_trait;
 use clap::Clap;
@@ -237,6 +237,14 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     let data_provider: Box<dyn DataProvider> = if let Some(addr) = opts.web3_addr {
+        if addr.scheme() != "http" && addr.scheme() != "https" {
+            bail!(
+                "Invalid web3 data provider URL: {}. Should start with http:// or https://.",
+                addr
+            );
+        }
+        let addr = addr.to_string();
+        info!("Using web3 data provider at {}", addr);
         Box::new(Web3DataProvider::new(addr).context("Failed to start web3 data provider")?)
     } else {
         Box::new(DummyDataProvider)

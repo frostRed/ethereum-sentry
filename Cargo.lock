@@ -675,6 +675,7 @@ dependencies = [
  "tracing-futures",
  "tracing-subscriber",
  "trust-dns-resolver",
+ "url",
  "web3",
 ]
 

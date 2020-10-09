@@ -1,5 +1,6 @@
 use clap::Clap;
 use derivative::Derivative;
+use url::Url;
 
 #[derive(Derivative, Clap)]
 #[clap(
@@ -14,9 +15,9 @@ pub struct Opts {
     #[clap(long, env, default_value = "0.0.0.0:30303")]
     pub listen_addr: String,
     #[clap(long, env)]
-    pub web3_addr: Option<String>,
+    pub web3_addr: Option<Url>,
     #[clap(long, env)]
-    pub control_addr: Option<String>,
+    pub control_addr: Option<Url>,
     #[clap(long, env, default_value = "all.mainnet.ethdisco.net")]
     pub dnsdisc_address: String,
 }
