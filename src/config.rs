@@ -14,9 +14,9 @@ pub struct Opts {
     #[clap(long, env, default_value = "0.0.0.0:30303")]
     pub listen_addr: String,
     #[clap(long, env)]
-    pub tg: Option<String>,
+    pub web3_addr: Option<String>,
     #[clap(long, env)]
-    pub control: Option<String>,
+    pub control_addr: Option<String>,
     #[clap(long, env, default_value = "all.mainnet.ethdisco.net")]
     pub dnsdisc_address: String,
 }

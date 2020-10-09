@@ -6,11 +6,12 @@ use crate::{
     grpc::control::{InboundMessage, StatusData},
     services::*,
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use arrayvec::ArrayString;
 use async_trait::async_trait;
 use clap::Clap;
 use devp2p::*;
+use futures::stream::StreamExt;
 use hex_literal::hex;
 use k256::ecdsa::SigningKey;
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -141,11 +142,17 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
                 let output = self
                     .data_provider
                     .get_block_headers(selector)
-                    .await
-                    .unwrap_or_else(|e| {
-                        warn!("Failed to fetch block headers: {}", e);
-                        vec![]
-                    });
+                    .filter_map(|res| async move {
+                        match res {
+                            Err(e) => {
+                                warn!("{}", e);
+                                None
+                            }
+                            Ok(v) => Some(v),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .await;
 
                 Ok((
                     Some(Message {
@@ -156,17 +163,23 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
                 ))
             }
             MessageId::GetBlockBodies => {
-                let block = Rlp::new(&*data).as_list()?;
-                info!("Block bodies requested: {:?}", block);
+                let blocks = Rlp::new(&*data).as_list()?;
+                info!("Block bodies requested: {:?}", blocks);
 
-                let output = self
+                let output: Vec<_> = self
                     .data_provider
-                    .get_block_bodies(block)
-                    .await
-                    .unwrap_or_else(|e| {
-                        warn!("Failed to fetch block bodies: {}", e);
-                        vec![]
-                    });
+                    .get_block_bodies(blocks)
+                    .filter_map(|res| async move {
+                        match res {
+                            Err(e) => {
+                                warn!("{}", e);
+                                None
+                            }
+                            Ok(v) => Some(v),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .await;
 
                 Ok((
                     Some(Message {
@@ -223,6 +236,12 @@ async fn main() -> anyhow::Result<()> {
         .build(secret_key)
         .await?;
 
+    let data_provider: Box<dyn DataProvider> = if let Some(addr) = opts.web3_addr {
+        Box::new(Web3DataProvider::new(addr).context("Failed to start web3 data provider")?)
+    } else {
+        Box::new(DummyDataProvider)
+    };
+
     info!("RLPx node listening at {}", opts.listen_addr);
 
     let _handle = client.register(
@@ -233,7 +252,7 @@ async fn main() -> anyhow::Result<()> {
         },
         Arc::new(CapabilityServerImpl {
             control: DummyControl,
-            data_provider: DummyDataProvider,
+            data_provider,
         }),
     );
 
