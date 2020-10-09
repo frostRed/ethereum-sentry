@@ -14,6 +14,8 @@ pub struct Opts {
     pub node_key: Option<String>,
     #[clap(long, env, default_value = "0.0.0.0:30303")]
     pub listen_addr: String,
+    #[clap(long, env, default_value = "50")]
+    pub max_peers: usize,
     #[clap(long, env)]
     pub web3_addr: Option<Url>,
     #[clap(long, env)]

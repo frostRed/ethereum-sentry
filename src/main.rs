@@ -18,8 +18,9 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::OsRng;
 use rlp::Rlp;
 use std::{
-    convert::{TryFrom, TryInto},
+    convert::{identity, TryFrom, TryInto},
     sync::Arc,
+    time::Duration,
 };
 use tracing::*;
 use tracing_subscriber::EnvFilter;
@@ -157,7 +158,7 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
                 let id = MessageId::BlockHeaders;
                 let data = rlp::encode_list(&output);
 
-                debug!("Replying: {:?} / {}", id, hex::encode(&data));
+                info!("Replying: {:?} / {}", id, hex::encode(&data));
 
                 Ok((
                     Some(Message {
@@ -234,7 +235,7 @@ async fn main() -> anyhow::Result<()> {
                 discovery: Arc::new(tokio::sync::Mutex::new(discovery)),
                 tasks: 1_usize.try_into().unwrap(),
             }),
-            max_peers: 50,
+            max_peers: opts.max_peers,
             addr: opts.listen_addr.parse()?,
         })
         .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
@@ -269,5 +270,13 @@ async fn main() -> anyhow::Result<()> {
         }),
     );
 
-    futures::future::pending().await
+    loop {
+        info!(
+            "Current peers: {}/{}.",
+            client.connected_peers(identity, None, None).len(),
+            opts.max_peers
+        );
+
+        tokio::time::delay_for(Duration::from_secs(5)).await;
+    }
 }
