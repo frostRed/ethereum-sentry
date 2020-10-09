@@ -154,10 +154,15 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
                     .collect::<Vec<_>>()
                     .await;
 
+                let id = MessageId::BlockHeaders;
+                let data = rlp::encode_list(&output);
+
+                debug!("Replying: {:?} / {}", id, hex::encode(&data));
+
                 Ok((
                     Some(Message {
-                        id: MessageId::BlockHeaders.to_usize().unwrap(),
-                        data: rlp::encode_list(&output).into(),
+                        id: id.to_usize().unwrap(),
+                        data: data.into(),
                     }),
                     None,
                 ))
