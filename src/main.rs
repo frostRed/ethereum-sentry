@@ -6,18 +6,16 @@ use arrayvec::ArrayString;
 use async_trait::async_trait;
 use clap::Clap;
 use devp2p::*;
+use enr::CombinedKey;
 use futures::stream::StreamExt;
 use k256::ecdsa::SigningKey;
 use num_traits::{FromPrimitive, ToPrimitive};
 use parking_lot::RwLock;
 use rand::rngs::OsRng;
 use rlp::Rlp;
-use std::{
-    convert::{identity, TryInto},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, convert::identity, sync::Arc, time::Duration};
 use task_group::TaskGroup;
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::*;
 use tracing_subscriber::EnvFilter;
 use trust_dns_resolver::{config::*, TokioAsyncResolver};
@@ -209,21 +207,52 @@ async fn main() -> anyhow::Result<()> {
         hex::encode(devp2p::util::pk2id(&secret_key.verify_key()).as_bytes())
     );
 
-    let dns_resolver = dnsdisc::Resolver::new(Arc::new(
-        TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()).await?,
-    ));
+    let mut discovery_tasks: Vec<Arc<AsyncMutex<dyn Discovery>>> = vec![];
 
-    let discovery = DnsDiscovery::new(Arc::new(dns_resolver), opts.dnsdisc_address, None);
+    if opts.dnsdisc {
+        info!("Starting DNS discovery fetch from {}", opts.dnsdisc_address);
+        let dns_resolver = dnsdisc::Resolver::new(Arc::new(
+            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()).await?,
+        ));
+
+        discovery_tasks.push(Arc::new(AsyncMutex::new(DnsDiscovery::new(
+            Arc::new(dns_resolver),
+            opts.dnsdisc_address,
+            None,
+        ))));
+    }
+
+    if opts.discv5 {
+        let mut svc = discv5::Discv5::new(
+            opts.discv5_enr
+                .ok_or_else(|| anyhow!("discv5 ENR not specified"))?,
+            CombinedKey::Secp256k1(SigningKey::new(secret_key.to_bytes().as_slice()).unwrap()),
+            Default::default(),
+        )
+        .map_err(|e| anyhow!("{}", e))?;
+        svc.start(opts.discv5_addr.parse()?)
+            .map_err(|e| anyhow!("{}", e))
+            .context("Failed to start discv5")?;
+        info!("Starting discv5 at {}", opts.discv5_addr);
+        discovery_tasks.push(Arc::new(AsyncMutex::new(svc)));
+    }
+
+    if !opts.reserved_peers.is_empty() {
+        info!("Enabling reserved peers: {:?}", opts.reserved_peers);
+        discovery_tasks.push(Arc::new(AsyncMutex::new(
+            opts.reserved_peers
+                .iter()
+                .map(|&NodeRecord { addr, id }| (addr, id))
+                .collect::<HashMap<_, _>>(),
+        )))
+    }
 
     let tasks = Arc::new(TaskGroup::new());
 
     let client = RLPxNodeBuilder::new()
         .with_task_group(tasks.clone())
         .with_listen_options(ListenOptions {
-            discovery: Some(DiscoveryOptions {
-                discovery: Arc::new(tokio::sync::Mutex::new(discovery)),
-                tasks: 1_usize.try_into().unwrap(),
-            }),
+            discovery_tasks,
             max_peers: opts.max_peers,
             addr: opts.listen_addr.parse()?,
         })
