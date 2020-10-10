@@ -13,7 +13,7 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use parking_lot::RwLock;
 use rand::rngs::OsRng;
 use rlp::Rlp;
-use std::{collections::HashMap, convert::identity, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use task_group::TaskGroup;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::*;
@@ -338,7 +338,7 @@ async fn main() -> anyhow::Result<()> {
     loop {
         info!(
             "Current peers: {}/{}.",
-            client.connected_peers(identity, None, None).len(),
+            client.connected_peers().len(),
             opts.max_peers
         );
 
