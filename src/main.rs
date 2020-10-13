@@ -7,15 +7,23 @@ use async_trait::async_trait;
 use clap::Clap;
 use devp2p::*;
 use enr::CombinedKey;
-use futures::stream::StreamExt;
+use futures::stream::{BoxStream, StreamExt};
 use k256::ecdsa::SigningKey;
+use maplit::btreemap;
 use num_traits::{FromPrimitive, ToPrimitive};
 use parking_lot::RwLock;
 use rand::rngs::OsRng;
 use rlp::Rlp;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Arc,
+    time::Duration,
+};
 use task_group::TaskGroup;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{
+    mpsc::{channel, Sender},
+    Mutex as AsyncMutex,
+};
 use tracing::*;
 use tracing_subscriber::EnvFilter;
 use trust_dns_resolver::{config::*, TokioAsyncResolver};
@@ -25,6 +33,10 @@ mod eth;
 mod grpc;
 mod services;
 mod types;
+
+fn eth() -> CapabilityName {
+    CapabilityName(ArrayString::from("eth").unwrap())
+}
 
 #[derive(Debug)]
 struct DummyControl;
@@ -40,149 +52,229 @@ impl Control for DummyControl {
     }
 }
 
-#[derive(Debug)]
+type OutboundSender = Sender<OutboundEvent>;
+type OutboundReceiver = Arc<AsyncMutex<BoxStream<'static, OutboundEvent>>>;
+
+#[derive(Clone)]
+struct Pipes {
+    sender: OutboundSender,
+    receiver: OutboundReceiver,
+}
+
 struct CapabilityServerImpl<C, DP> {
+    peer_pipes: Arc<RwLock<HashMap<PeerId, Pipes>>>,
+
     status_message: Arc<RwLock<Option<StatusMessage>>>,
     control: C,
     data_provider: DP,
 }
 
-#[async_trait]
-impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, DP> {
-    async fn on_peer_connect(&self, _: PeerId) -> PeerConnectOutcome {
-        if let Some(status_message) = self.status_message.read().clone() {
-            return PeerConnectOutcome::Retain {
-                hello: Some(Message {
-                    id: 0,
-                    data: rlp::encode(&status_message).into(),
-                }),
-            };
-        }
-
-        PeerConnectOutcome::Disavow
+impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
+    fn setup_pipes(&self, peer: PeerId, pipes: Pipes) {
+        assert!(self.peer_pipes.write().insert(peer, pipes).is_none());
     }
-    #[instrument(skip(self, peer, message), level = "debug", fields(peer=&*peer.id.to_string(), id=message.id))]
-    async fn on_ingress_message(
+    fn get_pipes(&self, peer: PeerId) -> Pipes {
+        self.peer_pipes.read().get(&peer).unwrap().clone()
+    }
+    fn sender(&self, peer: PeerId) -> OutboundSender {
+        self.peer_pipes.read().get(&peer).unwrap().sender.clone()
+    }
+    fn receiver(&self, peer: PeerId) -> OutboundReceiver {
+        self.peer_pipes.read().get(&peer).unwrap().receiver.clone()
+    }
+    fn teardown(&self, peer: PeerId) {
+        self.peer_pipes.write().remove(&peer);
+    }
+    fn connected_peers(&self) -> usize {
+        self.peer_pipes.read().len()
+    }
+
+    async fn handle_event(
         &self,
-        peer: IngressPeer,
-        message: Message,
-    ) -> Result<(Option<Message>, Option<ReputationReport>), HandleError> {
-        let Message { id, data } = message;
+        peer: PeerId,
+        event: InboundEvent,
+    ) -> Result<Option<Message>, DisconnectReason> {
+        match event {
+            InboundEvent::Disconnect { .. } => {
+                self.teardown(peer);
+            }
+            InboundEvent::Message {
+                message: Message { id, data },
+                ..
+            } => {
+                match MessageId::from_usize(id) {
+                    None => {
+                        warn!("Unknown message");
+                    }
+                    Some(MessageId::Status) => {
+                        let v = rlp::decode::<StatusMessage>(&data).map_err(|e| {
+                            info!("Failed to decode status message: {}! Kicking peer.", e);
 
-        debug!("Received message");
+                            DisconnectReason::ProtocolBreach
+                        })?;
 
-        match MessageId::from_usize(id).ok_or_else(|| anyhow!("unknown message"))? {
-            MessageId::Status => match rlp::decode::<StatusMessage>(&data) {
-                Ok(v) => {
-                    info!("Decoded status message: {:?}", v);
-                    Ok((None, None))
-                }
-                Err(e) => {
-                    info!("Failed to decode status message: {}! Kicking peer.", e);
-                    Ok((None, Some(DisconnectReason::ProtocolBreach.into())))
-                }
-            },
-            MessageId::GetBlockHeaders => {
-                let selector = rlp::decode::<GetBlockHeaders>(&*data)?;
-                info!("Block headers requested: {:?}", selector);
+                        info!("Decoded status message: {:?}", v);
+                    }
+                    Some(MessageId::GetBlockHeaders) => {
+                        let selector = rlp::decode::<GetBlockHeaders>(&*data)
+                            .map_err(|_| DisconnectReason::ProtocolBreach)?;
+                        info!("Block headers requested: {:?}", selector);
 
-                let selector = if selector.max_headers > 1 {
-                    // Just one. Fast case.
-                    vec![selector.block]
-                } else {
-                    async {
-                        let anchor = match selector.block {
-                            BlockId::Number(num) => num,
-                            BlockId::Hash(hash) => {
-                                match self.data_provider.resolve_block_height(hash).await {
-                                    Ok(Some(height)) => height,
-                                    Ok(None) => {
-                                        // this block does not exist, exit early.
-                                        return vec![];
+                        let selector = if selector.max_headers > 1 {
+                            // Just one. Fast case.
+                            vec![selector.block]
+                        } else {
+                            async {
+                                let anchor = match selector.block {
+                                    BlockId::Number(num) => num,
+                                    BlockId::Hash(hash) => {
+                                        match self.data_provider.resolve_block_height(hash).await {
+                                            Ok(Some(height)) => height,
+                                            Ok(None) => {
+                                                // this block does not exist, exit early.
+                                                return vec![];
+                                            }
+                                            Err(e) => {
+                                                warn!("Failed to resolve block {}: {}. Will query this one hash only", hash, e);
+                                                return vec![BlockId::Hash(hash)];
+                                            }
+                                        }
                                     }
-                                    Err(e) => {
-                                        warn!("Failed to resolve block {}: {}. Will query this one hash only", hash, e);
-                                        return vec![BlockId::Hash(hash)];
-                                    }
+                                };
+
+                                if selector.skip == 0 {
+                                    return vec![BlockId::Number(anchor)];
                                 }
+
+                                std::iter::once(anchor)
+                                    .chain((0..selector.max_headers).map(|i| {
+                                        if selector.reverse {
+                                            anchor - selector.skip * i
+                                        } else {
+                                            anchor + selector.skip * i
+                                        }
+                                    }))
+                                    .map(BlockId::Number)
+                                    .collect()
                             }
+                            .await
                         };
 
-                        if selector.skip == 0 {
-                            return vec![BlockId::Number(anchor)];
-                        }
-
-                        std::iter::once(anchor)
-                            .chain((0..selector.max_headers).map(|i| {
-                                if selector.reverse {
-                                    anchor - selector.skip * i
-                                } else {
-                                    anchor + selector.skip * i
+                        let output = self
+                            .data_provider
+                            .get_block_headers(selector)
+                            .filter_map(|res| async move {
+                                match res {
+                                    Err(e) => {
+                                        warn!("{}", e);
+                                        None
+                                    }
+                                    Ok(v) => Some(v),
                                 }
-                            }))
-                            .map(BlockId::Number)
-                            .collect()
+                            })
+                            .collect::<Vec<_>>()
+                            .await;
+
+                        let id = MessageId::BlockHeaders;
+                        let data = rlp::encode_list(&output);
+
+                        info!("Replying: {:?} / {}", id, hex::encode(&data));
+
+                        return Ok(Some(Message {
+                            id: id.to_usize().unwrap(),
+                            data: data.into(),
+                        }));
                     }
-                    .await
-                };
+                    Some(MessageId::GetBlockBodies) => {
+                        let blocks = Rlp::new(&*data)
+                            .as_list()
+                            .map_err(|_| DisconnectReason::ProtocolBreach)?;
+                        info!("Block bodies requested: {:?}", blocks);
 
-                let output = self
-                    .data_provider
-                    .get_block_headers(selector)
-                    .filter_map(|res| async move {
-                        match res {
-                            Err(e) => {
-                                warn!("{}", e);
-                                None
-                            }
-                            Ok(v) => Some(v),
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .await;
+                        let output: Vec<_> = self
+                            .data_provider
+                            .get_block_bodies(blocks)
+                            .filter_map(|res| async move {
+                                match res {
+                                    Err(e) => {
+                                        warn!("{}", e);
+                                        None
+                                    }
+                                    Ok(v) => Some(v),
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .await;
 
-                let id = MessageId::BlockHeaders;
-                let data = rlp::encode_list(&output);
-
-                info!("Replying: {:?} / {}", id, hex::encode(&data));
-
-                Ok((
-                    Some(Message {
-                        id: id.to_usize().unwrap(),
-                        data: data.into(),
-                    }),
-                    None,
-                ))
+                        return Ok(Some(Message {
+                            id: MessageId::BlockBodies.to_usize().unwrap(),
+                            data: rlp::encode_list(&output).into(),
+                        }));
+                    }
+                    _ => {}
+                }
             }
-            MessageId::GetBlockBodies => {
-                let blocks = Rlp::new(&*data).as_list()?;
-                info!("Block bodies requested: {:?}", blocks);
-
-                let output: Vec<_> = self
-                    .data_provider
-                    .get_block_bodies(blocks)
-                    .filter_map(|res| async move {
-                        match res {
-                            Err(e) => {
-                                warn!("{}", e);
-                                None
-                            }
-                            Ok(v) => Some(v),
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .await;
-
-                Ok((
-                    Some(Message {
-                        id: MessageId::BlockBodies.to_usize().unwrap(),
-                        data: rlp::encode_list(&output).into(),
-                    }),
-                    None,
-                ))
-            }
-            _ => Ok((None, None)),
         }
+
+        Ok(None)
+    }
+}
+
+#[async_trait]
+impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, DP> {
+    #[instrument(skip(self, peer), level = "debug", fields(peer=&*peer.to_string()))]
+    fn on_peer_connect(&self, peer: PeerId, _: BTreeSet<CapabilityId>) {
+        let first_event = if let Some(status_message) = &*self.status_message.read() {
+            OutboundEvent::Message {
+                capability_name: eth(),
+                message: Message {
+                    id: 0,
+                    data: rlp::encode(status_message).into(),
+                },
+            }
+        } else {
+            OutboundEvent::Disconnect {
+                reason: DisconnectReason::DisconnectRequested,
+            }
+        };
+
+        let (sender, receiver) = channel(1);
+        let receiver = Box::pin(tokio::stream::iter(std::iter::once(first_event)).chain(receiver));
+        self.setup_pipes(
+            peer,
+            Pipes {
+                sender,
+                receiver: Arc::new(AsyncMutex::new(receiver)),
+            },
+        );
+    }
+    #[instrument(skip(self, peer, event), level = "debug", fields(peer=&*peer.to_string(), event=format!("{:?}", event).as_str()))]
+    async fn on_peer_event(&self, peer: PeerId, event: InboundEvent) {
+        debug!("Received message");
+
+        if let Some(ev) = self.handle_event(peer, event).await.transpose() {
+            let _ = self
+                .sender(peer)
+                .send(match ev {
+                    Ok(message) => OutboundEvent::Message {
+                        capability_name: eth(),
+                        message,
+                    },
+                    Err(reason) => OutboundEvent::Disconnect { reason },
+                })
+                .await;
+        }
+    }
+
+    async fn next(&self, peer: PeerId) -> OutboundEvent {
+        self.receiver(peer)
+            .lock()
+            .await
+            .next()
+            .await
+            .unwrap_or(OutboundEvent::Disconnect {
+                reason: DisconnectReason::DisconnectRequested,
+            })
     }
 }
 
@@ -249,17 +341,6 @@ async fn main() -> anyhow::Result<()> {
 
     let tasks = Arc::new(TaskGroup::new());
 
-    let client = RLPxNodeBuilder::new()
-        .with_task_group(tasks.clone())
-        .with_listen_options(ListenOptions {
-            discovery_tasks,
-            max_peers: opts.max_peers,
-            addr: opts.listen_addr.parse()?,
-        })
-        .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
-        .build(secret_key)
-        .await?;
-
     let data_provider: Arc<dyn DataProvider> = if let Some(addr) = opts.web3_addr {
         if addr.scheme() != "http" && addr.scheme() != "https" {
             bail!(
@@ -273,11 +354,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         Arc::new(DummyDataProvider)
     };
-
     let control: Arc<dyn Control> = Arc::new(DummyControl);
-
-    info!("RLPx node listening at {}", opts.listen_addr);
-
     let status_message: Arc<RwLock<Option<StatusMessage>>> = Default::default();
 
     tasks.spawn_with_name(
@@ -322,23 +399,34 @@ async fn main() -> anyhow::Result<()> {
         "Status updater".into(),
     );
 
-    let _handle = client.register(
-        CapabilityInfo {
-            name: CapabilityName(ArrayString::from("eth").unwrap()),
-            version: 63,
-            length: 17,
-        },
-        Arc::new(CapabilityServerImpl {
-            status_message,
-            control,
-            data_provider,
-        }),
-    );
+    let capability_server = Arc::new(CapabilityServerImpl {
+        peer_pipes: Default::default(),
+        status_message,
+        control,
+        data_provider,
+    });
+
+    let swarm = Swarm::builder()
+        .with_task_group(tasks.clone())
+        .with_listen_options(ListenOptions {
+            discovery_tasks,
+            max_peers: opts.max_peers,
+            addr: opts.listen_addr.parse()?,
+        })
+        .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
+        .build(
+            btreemap! { CapabilityId { name: eth(), version: 63 } => 17 },
+            capability_server,
+            secret_key,
+        )
+        .await?;
+
+    info!("RLPx node listening at {}", opts.listen_addr);
 
     loop {
         info!(
             "Current peers: {}/{}.",
-            client.connected_peers().len(),
+            swarm.connected_peers(),
             opts.max_peers
         );
 

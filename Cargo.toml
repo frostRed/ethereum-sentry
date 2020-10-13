@@ -18,8 +18,8 @@ discv5 = { git = "https://github.com/sigp/discv5", branch = "version-5.1", defau
 dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust-dns"] }
 enr = "0.4"
 enum-primitive-derive = "0.2"
-ethereum = { git = "https://github.com/rust-blockchain/ethereum" }
-ethereum-types = "0.9"
+ethereum = { git = "https://github.com/rust-blockchain/ethereum", default-features = false }
+ethereum-types = { version = "0.9", default-features = false }
 futures = "0.3"
 hex = "*"
 hex-literal = "0.3"
