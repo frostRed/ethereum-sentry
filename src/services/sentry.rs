@@ -103,17 +103,14 @@ where
         Ok(Response::new(()))
     }
 
-    async fn send_message_by_filter(
+    async fn send_message_by_min_block(
         &self,
-        request: tonic::Request<crate::grpc::sentry::SendMessageByFilterRequest>,
+        request: tonic::Request<crate::grpc::sentry::SendMessageByMinBlockRequest>,
     ) -> Result<Response<()>, tonic::Status> {
-        let crate::grpc::sentry::SendMessageByFilterRequest {
-            data,
-            min_attribute_value,
-            ..
-        } = request.into_inner();
+        let crate::grpc::sentry::SendMessageByMinBlockRequest { data, min_block } =
+            request.into_inner();
         self.send_by_predicate(data, |capability_server| {
-            capability_server.peers_with_min_block(min_attribute_value)
+            capability_server.peers_with_min_block(min_block)
         })
         .await;
 

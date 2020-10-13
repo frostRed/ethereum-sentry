@@ -15,10 +15,9 @@ message OutboundMessageData {
   bytes data = 2;
 }
 
-message SendMessageByFilterRequest {
+message SendMessageByMinBlockRequest {
   OutboundMessageData data = 1;
-  string attribute = 2;
-  uint64 min_attribute_value = 3;
+  uint64 min_block = 2;
 }
 
 message SendMessageByIdRequest {
@@ -47,7 +46,7 @@ message PenalizePeerRequest {
 service Sentry {
   rpc SetAttribute(SetAttributeRequest) returns (google.protobuf.Empty);
   rpc PenalizePeer(PenalizePeerRequest) returns (google.protobuf.Empty);
-  rpc SendMessageByFilter(SendMessageByFilterRequest)
+  rpc SendMessageByMinBlock(SendMessageByMinBlockRequest)
       returns (google.protobuf.Empty);
   rpc SendMessageById(SendMessageByIdRequest) returns (google.protobuf.Empty);
   rpc SendMessageToRandomPeers(SendMessageToRandomPeersRequest)
