@@ -1,6 +1,11 @@
 #![allow(dead_code)]
 
-use crate::{config::*, eth::*, grpc::control::InboundMessage, services::*};
+use crate::{
+    config::*,
+    eth::*,
+    grpc::control::{InboundMessage, InboundMessageId},
+    services::*,
+};
 use anyhow::{anyhow, bail, Context};
 use arrayvec::ArrayString;
 use async_trait::async_trait;
@@ -16,6 +21,7 @@ use rand::rngs::OsRng;
 use rlp::Rlp;
 use std::{
     collections::{BTreeSet, HashMap},
+    convert::TryFrom,
     sync::Arc,
     time::Duration,
 };
@@ -102,7 +108,8 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                 message: Message { id, data },
                 ..
             } => {
-                match MessageId::from_usize(id) {
+                let message_id = MessageId::from_usize(id);
+                match message_id {
                     None => {
                         warn!("Unknown message");
                     }
@@ -210,6 +217,19 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             id: MessageId::BlockBodies.to_usize().unwrap(),
                             data: rlp::encode_list(&output).into(),
                         }));
+                    }
+                    Some(MessageId::BlockHeaders)
+                    | Some(MessageId::BlockBodies)
+                    | Some(MessageId::NewBlock)
+                    | Some(MessageId::NewBlockHashes) => {
+                        let _ = self
+                            .control
+                            .forward_inbound_message(InboundMessage {
+                                id: InboundMessageId::try_from(message_id.unwrap()).unwrap() as i32,
+                                data: data.to_vec(),
+                                peer_id: peer.to_fixed_bytes().to_vec(),
+                            })
+                            .await;
                     }
                     _ => {}
                 }
