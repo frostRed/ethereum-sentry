@@ -27,3 +27,22 @@ impl TryFrom<MessageId> for control::InboundMessageId {
         })
     }
 }
+
+impl MessageId {
+    pub fn from_outbound_message_id(id: i32) -> Option<Self> {
+        Some(match id {
+            0 => Self::GetBlockHeaders,
+            1 => Self::GetBlockBodies,
+            _ => return None,
+        })
+    }
+}
+
+impl From<sentry::OutboundMessageId> for MessageId {
+    fn from(id: sentry::OutboundMessageId) -> Self {
+        match id {
+            sentry::OutboundMessageId::GetBlockHeaders => Self::GetBlockHeaders,
+            sentry::OutboundMessageId::GetBlockBodies => Self::GetBlockBodies,
+        }
+    }
+}

@@ -7,7 +7,6 @@ use crate::{
     services::*,
 };
 use anyhow::{anyhow, bail, Context};
-use arrayvec::ArrayString;
 use async_trait::async_trait;
 use clap::Clap;
 use devp2p::*;
@@ -20,7 +19,7 @@ use parking_lot::RwLock;
 use rand::rngs::OsRng;
 use rlp::Rlp;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
     convert::TryFrom,
     sync::Arc,
     time::Duration,
@@ -39,10 +38,6 @@ mod eth;
 mod grpc;
 mod services;
 mod types;
-
-fn eth() -> CapabilityName {
-    CapabilityName(ArrayString::from("eth").unwrap())
-}
 
 #[derive(Debug)]
 struct DummyControl;
@@ -67,8 +62,10 @@ struct Pipes {
     receiver: OutboundReceiver,
 }
 
-struct CapabilityServerImpl<C, DP> {
+pub struct CapabilityServerImpl<C, DP> {
     peer_pipes: Arc<RwLock<HashMap<PeerId, Pipes>>>,
+    block_by_peer: Arc<RwLock<HashMap<PeerId, u64>>>,
+    peers_by_block: Arc<RwLock<BTreeMap<u64, HashSet<PeerId>>>>,
 
     status_message: Arc<RwLock<Option<StatusMessage>>>,
     control: C,
@@ -76,22 +73,68 @@ struct CapabilityServerImpl<C, DP> {
 }
 
 impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
-    fn setup_pipes(&self, peer: PeerId, pipes: Pipes) {
-        assert!(self.peer_pipes.write().insert(peer, pipes).is_none());
+    fn setup_peer(&self, peer: PeerId, p: Pipes) {
+        let mut pipes = self.peer_pipes.write();
+        let mut block_by_peer = self.block_by_peer.write();
+        let mut peers_by_block = self.peers_by_block.write();
+
+        let default_block = 0;
+
+        assert!(pipes.insert(peer, p).is_none());
+        assert!(block_by_peer.insert(peer, default_block).is_none());
+        peers_by_block
+            .entry(default_block)
+            .or_default()
+            .insert(peer);
     }
-    fn get_pipes(&self, peer: PeerId) -> Pipes {
-        self.peer_pipes.read().get(&peer).unwrap().clone()
+    fn get_pipes(&self, peer: PeerId) -> Option<Pipes> {
+        self.peer_pipes.read().get(&peer).cloned()
     }
-    fn sender(&self, peer: PeerId) -> OutboundSender {
-        self.peer_pipes.read().get(&peer).unwrap().sender.clone()
+    pub fn sender(&self, peer: PeerId) -> Option<OutboundSender> {
+        self.peer_pipes
+            .read()
+            .get(&peer)
+            .map(|pipes| pipes.sender.clone())
     }
-    fn receiver(&self, peer: PeerId) -> OutboundReceiver {
-        self.peer_pipes.read().get(&peer).unwrap().receiver.clone()
+    fn receiver(&self, peer: PeerId) -> Option<OutboundReceiver> {
+        self.peer_pipes
+            .read()
+            .get(&peer)
+            .map(|pipes| pipes.receiver.clone())
     }
-    fn teardown(&self, peer: PeerId) {
-        self.peer_pipes.write().remove(&peer);
+    fn teardown_peer(&self, peer: PeerId) {
+        let mut pipes = self.peer_pipes.write();
+        let mut block_by_peer = self.block_by_peer.write();
+        let mut peers_by_block = self.peers_by_block.write();
+
+        pipes.remove(&peer);
+        if let Some(block) = block_by_peer.remove(&peer) {
+            if let Entry::Occupied(mut entry) = peers_by_block.entry(block) {
+                entry.get_mut().remove(&peer);
+
+                if entry.get().is_empty() {
+                    entry.remove();
+                }
+            }
+        }
     }
-    fn connected_peers(&self) -> usize {
+
+    pub fn all_peers(&self) -> HashSet<PeerId> {
+        self.peer_pipes.read().keys().copied().collect()
+    }
+
+    pub fn peers_with_min_block(&self, block: u64) -> HashSet<PeerId> {
+        let peers_by_block = self.peers_by_block.read();
+
+        peers_by_block
+            .range(block..)
+            .map(|(_, v)| v)
+            .flatten()
+            .copied()
+            .collect()
+    }
+
+    pub fn connected_peers(&self) -> usize {
         self.peer_pipes.read().len()
     }
 
@@ -102,7 +145,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
     ) -> Result<Option<Message>, DisconnectReason> {
         match event {
             InboundEvent::Disconnect { .. } => {
-                self.teardown(peer);
+                self.teardown_peer(peer);
             }
             InboundEvent::Message {
                 message: Message { id, data },
@@ -227,7 +270,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .forward_inbound_message(InboundMessage {
                                 id: InboundMessageId::try_from(message_id.unwrap()).unwrap() as i32,
                                 data: data.to_vec(),
-                                peer_id: peer.to_fixed_bytes().to_vec(),
+                                peer_id: hex::encode(&peer.to_fixed_bytes()),
                             })
                             .await;
                     }
@@ -246,7 +289,7 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
     fn on_peer_connect(&self, peer: PeerId, _: BTreeSet<CapabilityId>) {
         let first_event = if let Some(status_message) = &*self.status_message.read() {
             OutboundEvent::Message {
-                capability_name: eth(),
+                capability_name: capability_name(),
                 message: Message {
                     id: 0,
                     data: rlp::encode(status_message).into(),
@@ -260,7 +303,7 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
 
         let (sender, receiver) = channel(1);
         let receiver = Box::pin(tokio::stream::iter(std::iter::once(first_event)).chain(receiver));
-        self.setup_pipes(
+        self.setup_peer(
             peer,
             Pipes {
                 sender,
@@ -275,9 +318,10 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
         if let Some(ev) = self.handle_event(peer, event).await.transpose() {
             let _ = self
                 .sender(peer)
+                .unwrap()
                 .send(match ev {
                     Ok(message) => OutboundEvent::Message {
-                        capability_name: eth(),
+                        capability_name: capability_name(),
                         message,
                     },
                     Err(reason) => OutboundEvent::Disconnect { reason },
@@ -288,6 +332,7 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
 
     async fn next(&self, peer: PeerId) -> OutboundEvent {
         self.receiver(peer)
+            .unwrap()
             .lock()
             .await
             .next()
@@ -425,6 +470,8 @@ async fn main() -> anyhow::Result<()> {
 
     let capability_server = Arc::new(CapabilityServerImpl {
         peer_pipes: Default::default(),
+        block_by_peer: Default::default(),
+        peers_by_block: Default::default(),
         status_message,
         control,
         data_provider,
@@ -439,7 +486,7 @@ async fn main() -> anyhow::Result<()> {
         })
         .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
         .build(
-            btreemap! { CapabilityId { name: eth(), version: 63 } => 17 },
+            btreemap! { CapabilityId { name: capability_name(), version: 63 } => 17 },
             capability_server,
             secret_key,
         )

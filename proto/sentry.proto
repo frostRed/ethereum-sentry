@@ -23,7 +23,7 @@ message SendMessageByFilterRequest {
 
 message SendMessageByIdRequest {
   OutboundMessageData data = 1;
-  bytes peer_id = 2;
+  string peer_id = 2;
 }
 
 message SendMessageToRandomPeersRequest {

@@ -11,6 +11,7 @@ anyhow = "1"
 arrayvec = "0.5"
 async-trait = "0.1"
 auto_impl = "0.4"
+bytes = "0.5"
 clap = "3.0.0-beta.2"
 derivative = "2"
 devp2p = { git = "https://github.com/rust-ethereum/devp2p", features = ["discv5", "dnsdisc"] }

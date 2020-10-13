@@ -1,4 +1,5 @@
 mod control;
 mod provider;
+mod sentry;
 
-pub use self::{control::*, provider::*};
+pub use self::{control::*, provider::*, sentry::*};

@@ -791,6 +791,7 @@ dependencies = [
  "arrayvec",
  "async-trait",
  "auto_impl",
+ "bytes",
  "clap",
  "derivative",
  "devp2p",

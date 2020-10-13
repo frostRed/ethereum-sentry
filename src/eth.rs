@@ -1,6 +1,12 @@
+use arrayvec::ArrayString;
+use devp2p::*;
 use enum_primitive_derive::*;
 use ethereum_types::*;
 use rlp_derive::*;
+
+pub fn capability_name() -> CapabilityName {
+    CapabilityName(ArrayString::from("eth").unwrap())
+}
 
 #[derive(Clone, Debug, RlpEncodable, RlpDecodable)]
 pub struct StatusMessage {
