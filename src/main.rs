@@ -3,13 +3,17 @@
 use crate::{
     config::*,
     eth::*,
-    grpc::control::{InboundMessage, InboundMessageId},
+    grpc::{
+        control::{InboundMessage, InboundMessageId},
+        sentry::sentry_server::SentryServer,
+    },
     services::*,
 };
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use clap::Clap;
 use devp2p::*;
+use educe::Educe;
 use enr::CombinedKey;
 use futures::stream::{BoxStream, StreamExt};
 use k256::ecdsa::SigningKey;
@@ -21,6 +25,7 @@ use rlp::Rlp;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
     convert::TryFrom,
+    fmt::Debug,
     sync::Arc,
     time::Duration,
 };
@@ -29,6 +34,7 @@ use tokio::sync::{
     mpsc::{channel, Sender},
     Mutex as AsyncMutex,
 };
+use tonic::transport::Server;
 use tracing::*;
 use tracing_subscriber::EnvFilter;
 use trust_dns_resolver::{config::*, TokioAsyncResolver};
@@ -62,7 +68,14 @@ struct Pipes {
     receiver: OutboundReceiver,
 }
 
-pub struct CapabilityServerImpl<C, DP> {
+#[derive(Educe)]
+#[educe(Debug)]
+pub struct CapabilityServerImpl<C, DP>
+where
+    C: Debug,
+    DP: Debug,
+{
+    #[educe(Debug(ignore))]
     peer_pipes: Arc<RwLock<HashMap<PeerId, Pipes>>>,
     block_by_peer: Arc<RwLock<HashMap<PeerId, u64>>>,
     peers_by_block: Arc<RwLock<BTreeMap<u64, HashSet<PeerId>>>>,
@@ -487,12 +500,26 @@ async fn main() -> anyhow::Result<()> {
         .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
         .build(
             btreemap! { CapabilityId { name: capability_name(), version: 63 } => 17 },
-            capability_server,
+            capability_server.clone(),
             secret_key,
         )
         .await?;
 
     info!("RLPx node listening at {}", opts.listen_addr);
+
+    let sentry_addr = opts.sentry_addr.parse()?;
+
+    tasks.spawn(async move {
+        let svc = SentryServer::new(SentryService::new(capability_server));
+
+        Server::builder()
+            .add_service(svc)
+            .serve(sentry_addr)
+            .await
+            .unwrap();
+
+        info!("Sentry gRPC server listening on {}", sentry_addr);
+    });
 
     loop {
         info!(

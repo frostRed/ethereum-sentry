@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use super::{Control, DataProvider};
 use crate::{eth::*, grpc::sentry::sentry_server::*, CapabilityServerImpl};
@@ -10,11 +10,20 @@ use num_traits::ToPrimitive;
 use tokio::stream::StreamExt;
 use tonic::Response;
 
-pub struct SentryService<C, DP> {
+#[derive(Clone, Debug)]
+pub struct SentryService<C, DP>
+where
+    C: Debug,
+    DP: Debug,
+{
     capability_server: Arc<CapabilityServerImpl<C, DP>>,
 }
 
-impl<C, DP> SentryService<C, DP> {
+impl<C, DP> SentryService<C, DP>
+where
+    C: Debug,
+    DP: Debug,
+{
     pub fn new(capability_server: Arc<CapabilityServerImpl<C, DP>>) -> Self {
         Self { capability_server }
     }

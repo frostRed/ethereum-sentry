@@ -14,6 +14,8 @@ pub struct Opts {
     pub node_key: Option<String>,
     #[clap(long, env, default_value = "0.0.0.0:30303")]
     pub listen_addr: String,
+    #[clap(long, env, default_value = "0.0.0.0:8000")]
+    pub sentry_addr: String,
     #[clap(long, env)]
     pub dnsdisc: bool,
     #[clap(long, env, default_value = "all.mainnet.ethdisco.net")]
