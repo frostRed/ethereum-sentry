@@ -354,7 +354,11 @@ async fn main() -> anyhow::Result<()> {
     } else {
         Arc::new(DummyDataProvider)
     };
-    let control: Arc<dyn Control> = Arc::new(DummyControl);
+    let control: Arc<dyn Control> = if let Some(addr) = opts.control_addr {
+        Arc::new(GrpcControl::connect(addr.to_string()).await?)
+    } else {
+        Arc::new(DummyControl)
+    };
     let status_message: Arc<RwLock<Option<StatusMessage>>> = Default::default();
 
     tasks.spawn_with_name(
