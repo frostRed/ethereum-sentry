@@ -13,10 +13,10 @@ async-trait = "0.1"
 auto_impl = "0.4"
 bytes = "0.5"
 clap = "3.0.0-beta.2"
-derivative = "2"
 devp2p = { git = "https://github.com/rust-ethereum/devp2p", features = ["discv5", "dnsdisc"] }
 discv5 = { git = "https://github.com/sigp/discv5", branch = "version-5.1", default-features = false }
 dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust-dns"] }
+educe = { version = "0.4", features = ["Debug"] }
 enr = "0.4"
 enum-primitive-derive = "0.2"
 ethereum = { git = "https://github.com/rust-blockchain/ethereum", default-features = false }

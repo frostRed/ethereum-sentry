@@ -1,16 +1,16 @@
 use clap::Clap;
-use derivative::Derivative;
+use educe::Educe;
 use url::Url;
 
-#[derive(Derivative, Clap)]
+#[derive(Educe, Clap)]
 #[clap(
     name = "ethereum-sentry",
     about = "Sentry for running on Ethereum P2P network"
 )]
-#[derivative(Debug)]
+#[educe(Debug)]
 pub struct Opts {
     #[clap(long, env)]
-    #[derivative(Debug = "ignore")]
+    #[educe(Debug(ignore))]
     pub node_key: Option<String>,
     #[clap(long, env, default_value = "0.0.0.0:30303")]
     pub listen_addr: String,
