@@ -512,13 +512,13 @@ async fn main() -> anyhow::Result<()> {
     tasks.spawn(async move {
         let svc = SentryServer::new(SentryService::new(capability_server));
 
+        info!("Sentry gRPC server starting on {}", sentry_addr);
+
         Server::builder()
             .add_service(svc)
             .serve(sentry_addr)
             .await
             .unwrap();
-
-        info!("Sentry gRPC server listening on {}", sentry_addr);
     });
 
     loop {
