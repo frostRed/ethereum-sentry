@@ -5,7 +5,7 @@ use url::Url;
 #[derive(Educe, Clap)]
 #[clap(
     name = "ethereum-sentry",
-    about = "Sentry for running on Ethereum P2P network"
+    about = "Service that listens to Ethereum's P2P network, serves information to other nodes, and provides gRPC interface to clients to interact with the network."
 )]
 #[educe(Debug)]
 pub struct Opts {
