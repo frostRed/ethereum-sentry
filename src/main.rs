@@ -57,6 +57,10 @@ impl Control for DummyControl {
     async fn get_status_data(&self) -> anyhow::Result<StatusData> {
         bail!("Not implemented")
     }
+
+    async fn get_fork_data(&self) -> anyhow::Result<ethereum_forkid::ForkFilter> {
+        bail!("Not implemented")
+    }
 }
 
 type OutboundSender = Sender<OutboundEvent>;
@@ -499,7 +503,7 @@ async fn main() -> anyhow::Result<()> {
         })
         .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
         .build(
-            btreemap! { CapabilityId { name: capability_name(), version: 63 } => 17 },
+            btreemap! { CapabilityId { name: capability_name(), version: 64 } => 17 },
             capability_server.clone(),
             secret_key,
         )

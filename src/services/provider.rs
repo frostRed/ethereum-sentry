@@ -10,6 +10,8 @@ use futures::{
 };
 use rlp::{Decodable, DecoderError, Encodable, Rlp};
 use rlp_derive::{RlpDecodable, RlpEncodable};
+use serde::Deserialize;
+use serde_json::json;
 use std::fmt::Debug;
 use tracing::{span, Instrument, Level};
 
@@ -113,9 +115,15 @@ impl DataProvider for DummyDataProvider {
     }
 }
 
+#[derive(Deserialize)]
+struct JsonRpcResponse<T> {
+    result: T,
+}
+
 #[derive(Debug)]
 pub struct Web3DataProvider {
     client: web3::Web3<web3::transports::Http>,
+    addr: String,
 }
 
 impl Web3DataProvider {
@@ -123,7 +131,7 @@ impl Web3DataProvider {
         let transport = web3::transports::Http::new(&addr)?;
         let client = web3::Web3::new(transport);
 
-        Ok(Self { client })
+        Ok(Self { client, addr })
     }
 
     async fn get_transaction(&self, id: H256) -> anyhow::Result<Transaction> {
@@ -144,44 +152,43 @@ impl Web3DataProvider {
 #[async_trait]
 impl DataProvider for Web3DataProvider {
     async fn get_status_data(&self) -> anyhow::Result<StatusData> {
-        let (network_id, (total_difficulty, best_hash), genesis_hash) = futures::future::try_join3(
-            async { Ok::<_, anyhow::Error>(1) },
-            async {
-                let best_block_number = self.client.eth().block_number().await?.as_u64();
-                let best_block = self
-                    .client
-                    .eth()
-                    .block(U64::from(best_block_number).into())
-                    .await?
-                    .ok_or_else(|| anyhow!("no current block?"))?;
+        let network_id = 1;
 
-                Ok((
-                    best_block
-                        .total_difficulty
-                        .ok_or_else(|| anyhow!("no total difficulty in best block"))?,
-                    best_block
-                        .hash
-                        .ok_or_else(|| anyhow!("no best block hash?"))?,
-                ))
-            },
-            async {
-                Ok(self
-                    .client
-                    .eth()
-                    .block(U64::from(0_u64).into())
-                    .await?
-                    .ok_or_else(|| anyhow!("no genesis block?"))?
-                    .hash
-                    .ok_or_else(|| anyhow!("no genesis block hash?"))?)
-            },
-        )
-        .await?;
+        let best_block_number = self.client.eth().block_number().await?.as_u64();
+        let best_block = self
+            .client
+            .eth()
+            .block(U64::from(best_block_number).into())
+            .await?
+            .ok_or_else(|| anyhow!("no current block?"))?;
+
+        let total_difficulty = best_block
+            .total_difficulty
+            .ok_or_else(|| anyhow!("no total difficulty in best block"))?;
+
+        let best_hash = best_block
+            .hash
+            .ok_or_else(|| anyhow!("no best block hash?"))?;
+
+        let fork_data = reqwest::Client::new()
+            .post(&self.addr)
+            .json(&json!({
+                "jsonrpc": "2.0",
+                "method": "tg_forks",
+                "params": ["latest"],
+                "id": 1,
+            }))
+            .send()
+            .await?
+            .json::<JsonRpcResponse<_>>()
+            .await?
+            .result;
 
         Ok(StatusData {
             network_id,
             total_difficulty,
             best_hash,
-            genesis_hash,
+            fork_data,
         })
     }
 

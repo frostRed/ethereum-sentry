@@ -14,11 +14,17 @@ message InboundMessage {
   bytes peer_id = 3;
 }
 
+message Forks {
+  bytes genesis = 1;
+  repeated uint64 passed = 2;
+  uint64 next = 3;
+}
+
 message StatusData {
   uint64 network_id = 1;
   bytes total_difficulty = 2;
-  bytes genesis_hash = 3;
-  bytes best_hash = 4;
+  bytes best_hash = 3;
+  Forks fork_data = 4;
 }
 
 service Control {
