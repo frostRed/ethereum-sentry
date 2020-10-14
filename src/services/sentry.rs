@@ -1,12 +1,15 @@
-use std::{fmt::Debug, sync::Arc};
-
 use super::{Control, DataProvider};
-use crate::{eth::*, grpc::sentry::sentry_server::*, CapabilityServerImpl};
+use crate::{
+    eth::*,
+    grpc::sentry::{sentry_server::*, OutboundMessageData, SentPeers},
+    CapabilityServerImpl,
+};
 use async_trait::async_trait;
 use bytes::Bytes;
 use devp2p::*;
 use futures::stream::FuturesUnordered;
 use num_traits::ToPrimitive;
+use std::{convert::identity, fmt::Debug, sync::Arc};
 use tokio::stream::StreamExt;
 use tonic::Response;
 
@@ -36,9 +39,10 @@ where
 {
     async fn send_by_predicate<F, IT>(
         &self,
-        request: Option<crate::grpc::sentry::OutboundMessageData>,
+        request: Option<OutboundMessageData>,
         pred: F,
-    ) where
+    ) -> SentPeers
+    where
         F: FnOnce(&CapabilityServerImpl<C, DP>) -> IT,
         IT: IntoIterator<Item = PeerId>,
     {
@@ -47,26 +51,38 @@ where
                 let data = Bytes::from(data.data);
                 let id = id.to_usize().unwrap();
 
-                (pred)(&*self.capability_server)
-                    .into_iter()
-                    .map(|peer| {
-                        let data = data.clone();
-                        async move {
-                            if let Some(mut sender) = self.capability_server.sender(peer) {
-                                let _ = sender
-                                    .send(OutboundEvent::Message {
-                                        capability_name: capability_name(),
-                                        message: Message { id, data },
-                                    })
-                                    .await;
+                return SentPeers {
+                    peers: (pred)(&*self.capability_server)
+                        .into_iter()
+                        .map(|peer| {
+                            let data = data.clone();
+                            async move {
+                                if let Some(mut sender) = self.capability_server.sender(peer) {
+                                    if sender
+                                        .send(OutboundEvent::Message {
+                                            capability_name: capability_name(),
+                                            message: Message { id, data },
+                                        })
+                                        .await
+                                        .is_ok()
+                                    {
+                                        return Some(peer);
+                                    }
+                                }
+
+                                None
                             }
-                        }
-                    })
-                    .collect::<FuturesUnordered<_>>()
-                    .collect::<()>()
-                    .await;
+                        })
+                        .collect::<FuturesUnordered<_>>()
+                        .filter_map(identity)
+                        .map(|peer_id| peer_id.to_fixed_bytes().to_vec())
+                        .collect::<Vec<_>>()
+                        .await,
+                };
             }
         }
+
+        SentPeers { peers: vec![] }
     }
 }
 
@@ -97,60 +113,60 @@ where
     async fn send_message_by_min_block(
         &self,
         request: tonic::Request<crate::grpc::sentry::SendMessageByMinBlockRequest>,
-    ) -> Result<Response<()>, tonic::Status> {
+    ) -> Result<Response<SentPeers>, tonic::Status> {
         let crate::grpc::sentry::SendMessageByMinBlockRequest { data, min_block } =
             request.into_inner();
-        self.send_by_predicate(data, |capability_server| {
-            capability_server.peers_with_min_block(min_block)
-        })
-        .await;
-
-        Ok(Response::new(()))
+        Ok(Response::new(
+            self.send_by_predicate(data, |capability_server| {
+                capability_server.peers_with_min_block(min_block)
+            })
+            .await,
+        ))
     }
 
     async fn send_message_by_id(
         &self,
         request: tonic::Request<crate::grpc::sentry::SendMessageByIdRequest>,
-    ) -> Result<Response<()>, tonic::Status> {
+    ) -> Result<Response<SentPeers>, tonic::Status> {
         let crate::grpc::sentry::SendMessageByIdRequest { peer_id, data } = request.into_inner();
 
         let peer = hex::encode(&peer_id)
             .parse::<PeerId>()
             .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
 
-        self.send_by_predicate(data, |_| std::iter::once(peer))
-            .await;
-
-        Ok(Response::new(()))
+        Ok(Response::new(
+            self.send_by_predicate(data, |_| std::iter::once(peer))
+                .await,
+        ))
     }
 
     async fn send_message_to_random_peers(
         &self,
         request: tonic::Request<crate::grpc::sentry::SendMessageToRandomPeersRequest>,
-    ) -> Result<Response<()>, tonic::Status> {
+    ) -> Result<Response<SentPeers>, tonic::Status> {
         let crate::grpc::sentry::SendMessageToRandomPeersRequest { max_peers, data } =
             request.into_inner();
 
-        self.send_by_predicate(data, |capability_server| {
-            capability_server
-                .all_peers()
-                .into_iter()
-                .take(max_peers as usize)
-        })
-        .await;
-
-        Ok(Response::new(()))
+        Ok(Response::new(
+            self.send_by_predicate(data, |capability_server| {
+                capability_server
+                    .all_peers()
+                    .into_iter()
+                    .take(max_peers as usize)
+            })
+            .await,
+        ))
     }
 
     async fn send_message_to_all(
         &self,
-        request: tonic::Request<crate::grpc::sentry::OutboundMessageData>,
-    ) -> Result<Response<()>, tonic::Status> {
-        self.send_by_predicate(Some(request.into_inner()), |capability_server| {
-            capability_server.all_peers()
-        })
-        .await;
-
-        Ok(Response::new(()))
+        request: tonic::Request<OutboundMessageData>,
+    ) -> Result<Response<SentPeers>, tonic::Status> {
+        Ok(Response::new(
+            self.send_by_predicate(Some(request.into_inner()), |capability_server| {
+                capability_server.all_peers()
+            })
+            .await,
+        ))
     }
 }
