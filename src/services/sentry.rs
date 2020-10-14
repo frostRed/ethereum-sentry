@@ -76,20 +76,11 @@ where
     C: Control,
     DP: DataProvider,
 {
-    async fn set_attribute(
-        &self,
-        _: tonic::Request<crate::grpc::sentry::SetAttributeRequest>,
-    ) -> Result<Response<()>, tonic::Status> {
-        Ok(Response::new(()))
-    }
-
     async fn penalize_peer(
         &self,
         request: tonic::Request<crate::grpc::sentry::PenalizePeerRequest>,
     ) -> Result<Response<()>, tonic::Status> {
-        let peer = request
-            .into_inner()
-            .peer_id
+        let peer = hex::encode(&request.into_inner().peer_id)
             .parse::<PeerId>()
             .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
         if let Some(mut sender) = self.capability_server.sender(peer) {
@@ -123,7 +114,7 @@ where
     ) -> Result<Response<()>, tonic::Status> {
         let crate::grpc::sentry::SendMessageByIdRequest { peer_id, data } = request.into_inner();
 
-        let peer = peer_id
+        let peer = hex::encode(&peer_id)
             .parse::<PeerId>()
             .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
 

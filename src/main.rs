@@ -283,7 +283,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .forward_inbound_message(InboundMessage {
                                 id: InboundMessageId::try_from(message_id.unwrap()).unwrap() as i32,
                                 data: data.to_vec(),
-                                peer_id: hex::encode(&peer.to_fixed_bytes()),
+                                peer_id: peer.as_fixed_bytes().to_vec(),
                             })
                             .await;
                     }

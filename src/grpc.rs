@@ -2,10 +2,6 @@ use crate::eth::MessageId;
 use anyhow::bail;
 use std::convert::TryFrom;
 
-pub mod common {
-    tonic::include_proto!("common");
-}
-
 pub mod control {
     tonic::include_proto!("control");
 }
