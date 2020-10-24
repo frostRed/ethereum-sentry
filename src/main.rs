@@ -15,6 +15,7 @@ use clap::Clap;
 use devp2p::*;
 use educe::Educe;
 use enr::CombinedKey;
+use ethereum::Transaction;
 use futures::stream::{BoxStream, StreamExt};
 use k256::ecdsa::SigningKey;
 use maplit::btreemap;
@@ -304,22 +305,31 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
 impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, DP> {
     #[instrument(skip(self, peer), level = "debug", fields(peer=&*peer.to_string()))]
     fn on_peer_connect(&self, peer: PeerId, _: BTreeSet<CapabilityId>) {
-        let first_event = if let Some(status_message) = &*self.status_message.read() {
-            OutboundEvent::Message {
-                capability_name: capability_name(),
-                message: Message {
-                    id: 0,
-                    data: rlp::encode(status_message).into(),
+        let first_events = if let Some(status_message) = &*self.status_message.read() {
+            vec![
+                OutboundEvent::Message {
+                    capability_name: capability_name(),
+                    message: Message {
+                        id: MessageId::Status.to_usize().unwrap(),
+                        data: rlp::encode(status_message).into(),
+                    },
                 },
-            }
+                OutboundEvent::Message {
+                    capability_name: capability_name(),
+                    message: Message {
+                        id: MessageId::Transactions.to_usize().unwrap(),
+                        data: rlp::encode_list(&Vec::<Transaction>::new()).into(),
+                    },
+                },
+            ]
         } else {
-            OutboundEvent::Disconnect {
+            vec![OutboundEvent::Disconnect {
                 reason: DisconnectReason::DisconnectRequested,
-            }
+            }]
         };
 
         let (sender, receiver) = channel(1);
-        let receiver = Box::pin(tokio::stream::iter(std::iter::once(first_event)).chain(receiver));
+        let receiver = Box::pin(tokio::stream::iter(first_events).chain(receiver));
         self.setup_peer(
             peer,
             Pipes {
