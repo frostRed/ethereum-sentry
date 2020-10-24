@@ -328,7 +328,7 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
             },
         );
     }
-    #[instrument(skip(self, peer, event), level = "debug", fields(peer=&*peer.to_string(), event=format!("{:?}", event).as_str()))]
+    #[instrument(skip(self, peer, event), level = "debug", fields(peer=&*peer.to_string(), event=&*event.to_string()))]
     async fn on_peer_event(&self, peer: PeerId, event: InboundEvent) {
         debug!("Received message");
 
@@ -347,6 +347,7 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
         }
     }
 
+    #[instrument(skip(self, peer), level = "debug", fields(peer=&*peer.to_string()))]
     async fn next(&self, peer: PeerId) -> OutboundEvent {
         self.receiver(peer)
             .unwrap()
