@@ -1,4 +1,5 @@
 use clap::Clap;
+use devp2p::NodeRecord;
 use educe::Educe;
 use url::Url;
 
@@ -12,8 +13,8 @@ pub struct Opts {
     #[clap(long, env)]
     #[educe(Debug(ignore))]
     pub node_key: Option<String>,
-    #[clap(long, env, default_value = "0.0.0.0:30303")]
-    pub listen_addr: String,
+    #[clap(long, env, default_value = "30303")]
+    pub listen_port: u16,
     #[clap(long, env, default_value = "0.0.0.0:8000")]
     pub sentry_addr: String,
     #[clap(long, env)]
@@ -21,15 +22,21 @@ pub struct Opts {
     #[clap(long, env, default_value = "all.mainnet.ethdisco.net")]
     pub dnsdisc_address: String,
     #[clap(long, env)]
+    pub discv4: bool,
+    #[clap(long, env, default_value = "30303")]
+    pub discv4_port: u16,
+    #[clap(long, env)]
+    pub discv4_bootnodes: Vec<discv4::NodeRecord>,
+    #[clap(long, env)]
     pub discv5: bool,
     #[clap(long, env)]
     pub discv5_enr: Option<discv5::Enr>,
-    #[clap(long, env, default_value = "0.0.0.0:30303")]
+    #[clap(long, env, default_value = "0.0.0.0:30304")]
     pub discv5_addr: String,
     #[clap(long, env)]
-    pub discv5_bootnodes: Vec<devp2p::NodeRecord>,
+    pub discv5_bootnodes: Vec<NodeRecord>,
     #[clap(long, env)]
-    pub reserved_peers: Vec<devp2p::NodeRecord>,
+    pub reserved_peers: Vec<NodeRecord>,
     #[clap(long, env, default_value = "50")]
     pub max_peers: usize,
     #[clap(long, env)]

@@ -374,6 +374,8 @@ async fn main() -> anyhow::Result<()> {
         SigningKey::random(&mut OsRng)
     };
 
+    let listen_addr = format!("0.0.0.0:{}", opts.listen_port);
+
     info!("Starting Ethereum sentry");
 
     info!(
@@ -394,6 +396,23 @@ async fn main() -> anyhow::Result<()> {
             opts.dnsdisc_address,
             None,
         ))));
+    }
+
+    if opts.discv4 {
+        info!("Starting discv4 at port {}", opts.discv4_port);
+        discovery_tasks.push(Arc::new(AsyncMutex::new(Discv4::new(
+            discv4::Node::new(
+                format!("0.0.0.0:{}", opts.discv4_port).parse().unwrap(),
+                SigningKey::new(secret_key.to_bytes().as_slice()).unwrap(),
+                opts.discv4_bootnodes,
+                None,
+                true,
+                opts.listen_port,
+            )
+            .await
+            .unwrap(),
+            20,
+        ))))
     }
 
     if opts.discv5 {
@@ -443,47 +462,44 @@ async fn main() -> anyhow::Result<()> {
     };
     let status_message: Arc<RwLock<Option<StatusMessage>>> = Default::default();
 
-    tasks.spawn_with_name(
-        {
-            let status_message = status_message.clone();
-            let control = control.clone();
-            let data_provider = data_provider.clone();
-            async move {
-                loop {
-                    let mut s = None;
-                    match control.get_status_data().await {
-                        Err(e) => {
-                            debug!(
-                                "Failed to get status from control, trying from data provider: {}",
-                                e
-                            );
-                            match data_provider.get_status_data().await {
-                                Err(e) => {
-                                    debug!("Failed to fetch status from data provider: {}", e);
-                                }
-                                Ok(v) => {
-                                    s = Some(v);
-                                }
+    tasks.spawn_with_name("Status updater", {
+        let status_message = status_message.clone();
+        let control = control.clone();
+        let data_provider = data_provider.clone();
+        async move {
+            loop {
+                let mut s = None;
+                match control.get_status_data().await {
+                    Err(e) => {
+                        debug!(
+                            "Failed to get status from control, trying from data provider: {}",
+                            e
+                        );
+                        match data_provider.get_status_data().await {
+                            Err(e) => {
+                                debug!("Failed to fetch status from data provider: {}", e);
+                            }
+                            Ok(v) => {
+                                s = Some(v);
                             }
                         }
-                        Ok(v) => {
-                            s = Some(v);
-                        }
                     }
-
-                    if let Some(s) = &s {
-                        debug!("Setting status data to {:?}", s);
-                    } else {
-                        warn!("Failed to fetch status data, server will not accept new peers.");
+                    Ok(v) => {
+                        s = Some(v);
                     }
-                    *status_message.write() = s.map(From::from);
-
-                    tokio::time::delay_for(Duration::from_secs(5)).await;
                 }
+
+                if let Some(s) = &s {
+                    debug!("Setting status data to {:?}", s);
+                } else {
+                    warn!("Failed to fetch status data, server will not accept new peers.");
+                }
+                *status_message.write() = s.map(From::from);
+
+                tokio::time::delay_for(Duration::from_secs(5)).await;
             }
-        },
-        "Status updater".into(),
-    );
+        }
+    });
 
     let capability_server = Arc::new(CapabilityServerImpl {
         peer_pipes: Default::default(),
@@ -499,7 +515,7 @@ async fn main() -> anyhow::Result<()> {
         .with_listen_options(ListenOptions {
             discovery_tasks,
             max_peers: opts.max_peers,
-            addr: opts.listen_addr.parse()?,
+            addr: listen_addr.parse().unwrap(),
         })
         .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
         .build(
@@ -509,7 +525,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
 
-    info!("RLPx node listening at {}", opts.listen_addr);
+    info!("RLPx node listening at {}", listen_addr);
 
     let sentry_addr = opts.sentry_addr.parse()?;
 
