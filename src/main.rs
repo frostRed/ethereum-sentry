@@ -16,6 +16,7 @@ use devp2p::*;
 use educe::Educe;
 use enr::CombinedKey;
 use ethereum::Transaction;
+use ethereum_forkid::ForkFilter;
 use futures::stream::{BoxStream, StreamExt};
 use k256::ecdsa::SigningKey;
 use maplit::btreemap;
@@ -58,10 +59,6 @@ impl Control for DummyControl {
     async fn get_status_data(&self) -> anyhow::Result<StatusData> {
         bail!("Not implemented")
     }
-
-    async fn get_fork_data(&self) -> anyhow::Result<ethereum_forkid::ForkFilter> {
-        bail!("Not implemented")
-    }
 }
 
 type OutboundSender = Sender<OutboundEvent>;
@@ -85,7 +82,8 @@ where
     block_by_peer: Arc<RwLock<HashMap<PeerId, u64>>>,
     peers_by_block: Arc<RwLock<BTreeMap<u64, HashSet<PeerId>>>>,
 
-    status_message: Arc<RwLock<Option<StatusMessage>>>,
+    status_message: Arc<RwLock<Option<(StatusData, ForkFilter)>>>,
+    valid_peers: Arc<RwLock<HashSet<PeerId>>>,
     control: C,
     data_provider: DP,
 }
@@ -124,6 +122,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
         let mut pipes = self.peer_pipes.write();
         let mut block_by_peer = self.block_by_peer.write();
         let mut peers_by_block = self.peers_by_block.write();
+        let mut valid_peers = self.valid_peers.write();
 
         pipes.remove(&peer);
         if let Some(block) = block_by_peer.remove(&peer) {
@@ -135,6 +134,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                 }
             }
         }
+        valid_peers.remove(&peer);
     }
 
     pub fn all_peers(&self) -> HashSet<PeerId> {
@@ -169,6 +169,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                 message: Message { id, data },
                 ..
             } => {
+                let valid_peer = self.valid_peers.read().contains(&peer);
                 let message_id = MessageId::from_usize(id);
                 match message_id {
                     None => {
@@ -182,8 +183,20 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                         })?;
 
                         info!("Decoded status message: {:?}", v);
+
+                        let status_data = self.status_message.read();
+                        let mut valid_peers = self.valid_peers.write();
+                        if let Some((_, fork_filter)) = &*status_data {
+                            fork_filter.is_compatible(v.fork_id).map_err(|reason| {
+                                info!("Kicking peer with incompatible fork ID: {:?}", reason);
+
+                                DisconnectReason::UselessPeer
+                            })?;
+
+                            valid_peers.insert(peer);
+                        }
                     }
-                    Some(MessageId::GetBlockHeaders) => {
+                    Some(MessageId::GetBlockHeaders) if valid_peer => {
                         let selector = rlp::decode::<GetBlockHeaders>(&*data)
                             .map_err(|_| DisconnectReason::ProtocolBreach)?;
                         info!("Block headers requested: {:?}", selector);
@@ -253,7 +266,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             data: data.into(),
                         }));
                     }
-                    Some(MessageId::GetBlockBodies) => {
+                    Some(MessageId::GetBlockBodies) if valid_peer => {
                         let blocks = Rlp::new(&*data)
                             .as_list()
                             .map_err(|_| DisconnectReason::ProtocolBreach)?;
@@ -282,7 +295,9 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                     Some(MessageId::BlockHeaders)
                     | Some(MessageId::BlockBodies)
                     | Some(MessageId::NewBlock)
-                    | Some(MessageId::NewBlockHashes) => {
+                    | Some(MessageId::NewBlockHashes)
+                        if valid_peer =>
+                    {
                         let _ = self
                             .control
                             .forward_inbound_message(InboundMessage {
@@ -305,13 +320,22 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
 impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, DP> {
     #[instrument(skip(self, peer), level = "debug", fields(peer=&*peer.to_string()))]
     fn on_peer_connect(&self, peer: PeerId, _: BTreeSet<CapabilityId>) {
-        let first_events = if let Some(status_message) = &*self.status_message.read() {
+        let first_events = if let Some((status_data, fork_filter)) = &*self.status_message.read() {
+            let status_message = StatusMessage {
+                protocol_version: 64,
+                network_id: status_data.network_id,
+                total_difficulty: status_data.total_difficulty,
+                best_hash: status_data.best_hash,
+                genesis_hash: status_data.fork_data.genesis,
+                fork_id: fork_filter.current(),
+            };
+
             vec![
                 OutboundEvent::Message {
                     capability_name: capability_name(),
                     message: Message {
                         id: MessageId::Status.to_usize().unwrap(),
-                        data: rlp::encode(status_message).into(),
+                        data: rlp::encode(&status_message).into(),
                     },
                 },
                 OutboundEvent::Message {
@@ -471,7 +495,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         Arc::new(DummyControl)
     };
-    let status_message: Arc<RwLock<Option<StatusMessage>>> = Default::default();
+    let status_message: Arc<RwLock<Option<(StatusData, ForkFilter)>>> = Default::default();
 
     tasks.spawn_with_name("Status updater", {
         let status_message = status_message.clone();
@@ -479,33 +503,53 @@ async fn main() -> anyhow::Result<()> {
         let data_provider = data_provider.clone();
         async move {
             loop {
-                let mut s = None;
-                match control.get_status_data().await {
-                    Err(e) => {
-                        debug!(
-                            "Failed to get status from control, trying from data provider: {}",
-                            e
-                        );
-                        match data_provider.get_status_data().await {
-                            Err(e) => {
-                                debug!("Failed to fetch status from data provider: {}", e);
-                            }
-                            Ok(v) => {
-                                s = Some(v);
+                match async {
+                    let status_data = match control.get_status_data().await {
+                        Err(e) => {
+                            debug!(
+                                "Failed to get status from control, trying from data provider: {}",
+                                e
+                            );
+                            match data_provider.get_status_data().await {
+                                Err(e) => {
+                                    debug!("Failed to fetch status from data provider: {}", e);
+                                    return Err(e);
+                                }
+                                Ok(v) => v,
                             }
                         }
-                    }
-                    Ok(v) => {
-                        s = Some(v);
-                    }
-                }
+                        Ok(v) => v,
+                    };
 
-                if let Some(s) = &s {
-                    debug!("Setting status data to {:?}", s);
-                } else {
-                    warn!("Failed to fetch status data, server will not accept new peers.");
+                    debug!("Resolving best hash");
+                    let best_block = data_provider
+                        .resolve_block_height(status_data.best_hash)
+                        .await
+                        .context("failed to resolve best hash")?
+                        .ok_or_else(|| anyhow!("invalid best hash"))?;
+
+                    let fork_filter = ForkFilter::new(
+                        best_block,
+                        status_data.fork_data.genesis,
+                        status_data.fork_data.forks.iter().copied(),
+                    );
+
+                    Ok((status_data, fork_filter))
                 }
-                *status_message.write() = s.map(From::from);
+                .await
+                {
+                    Ok(s) => {
+                        debug!("Setting status data to {:?}", s);
+                        *status_message.write() = Some(s);
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to fetch status data: {}. Server will not accept new peers.",
+                            e
+                        );
+                        *status_message.write() = None;
+                    }
+                }
 
                 tokio::time::delay_for(Duration::from_secs(5)).await;
             }
@@ -517,6 +561,7 @@ async fn main() -> anyhow::Result<()> {
         block_by_peer: Default::default(),
         peers_by_block: Default::default(),
         status_message,
+        valid_peers: Default::default(),
         control,
         data_provider,
     });

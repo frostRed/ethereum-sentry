@@ -16,8 +16,7 @@ message InboundMessage {
 
 message Forks {
   bytes genesis = 1;
-  repeated uint64 passed = 2;
-  uint64 next = 3;
+  repeated uint64 forks = 2;
 }
 
 message StatusData {

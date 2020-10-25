@@ -5,7 +5,6 @@ use crate::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use auto_impl::auto_impl;
-use ethereum_forkid::*;
 use std::fmt::Debug;
 use tonic::transport::Channel;
 
@@ -14,7 +13,6 @@ use tonic::transport::Channel;
 pub trait Control: Debug + Send + Sync + 'static {
     async fn forward_inbound_message(&self, message: InboundMessage) -> anyhow::Result<()>;
     async fn get_status_data(&self) -> anyhow::Result<StatusData>;
-    async fn get_fork_data(&self) -> anyhow::Result<ForkFilter>;
 }
 
 #[derive(Debug)]
@@ -51,13 +49,8 @@ impl Control for GrpcControl {
             best_hash: hex::encode(status_data.best_hash).parse()?,
             fork_data: Forks {
                 genesis: hex::encode(fork_data.genesis).parse()?,
-                passed: fork_data.passed.into_iter().collect(),
-                next: Some(fork_data.next),
+                forks: fork_data.forks.into_iter().collect(),
             },
         })
-    }
-
-    async fn get_fork_data(&self) -> anyhow::Result<ForkFilter> {
-        anyhow::bail!("Not implemented")
     }
 }

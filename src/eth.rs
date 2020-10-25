@@ -1,9 +1,9 @@
-use std::{collections::BTreeSet, ops::Add};
+use std::collections::BTreeSet;
 
 use arrayvec::ArrayString;
 use devp2p::*;
 use enum_primitive_derive::*;
-use ethereum_forkid::{ForkHash, ForkId};
+use ethereum_forkid::ForkId;
 use ethereum_types::*;
 use rlp_derive::*;
 use serde::Deserialize;
@@ -25,8 +25,7 @@ pub struct StatusMessage {
 #[derive(Clone, Debug, Deserialize)]
 pub struct Forks {
     pub genesis: H256,
-    pub passed: BTreeSet<u64>,
-    pub next: Option<u64>,
+    pub forks: BTreeSet<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -35,27 +34,6 @@ pub struct StatusData {
     pub total_difficulty: U256,
     pub best_hash: H256,
     pub fork_data: Forks,
-}
-
-impl From<StatusData> for StatusMessage {
-    fn from(value: StatusData) -> Self {
-        Self {
-            protocol_version: 64,
-            network_id: value.network_id,
-            total_difficulty: value.total_difficulty,
-            best_hash: value.best_hash,
-            genesis_hash: value.fork_data.genesis,
-            fork_id: ForkId {
-                hash: value
-                    .fork_data
-                    .passed
-                    .into_iter()
-                    .filter(|&fork_block| fork_block != 0)
-                    .fold(ForkHash::from(value.fork_data.genesis), Add::add),
-                next: value.fork_data.next.unwrap_or(0),
-            },
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Primitive)]
