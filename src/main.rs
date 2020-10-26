@@ -462,7 +462,7 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow!("{}", e))
             .context("Failed to start discv5")?;
         info!("Starting discv5 at {}", opts.discv5_addr);
-        discovery_tasks.push(Arc::new(AsyncMutex::new(svc)));
+        discovery_tasks.push(Arc::new(AsyncMutex::new(Discv5::new(svc, 20))));
     }
 
     if !opts.reserved_peers.is_empty() {
