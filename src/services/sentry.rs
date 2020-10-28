@@ -118,7 +118,10 @@ where
             request.into_inner();
         Ok(Response::new(
             self.send_by_predicate(data, |capability_server| {
-                capability_server.peers_with_min_block(min_block)
+                capability_server
+                    .block_tracker
+                    .read()
+                    .peers_with_min_block(min_block)
             })
             .await,
         ))

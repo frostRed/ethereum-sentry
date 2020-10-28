@@ -70,6 +70,48 @@ struct Pipes {
     receiver: OutboundReceiver,
 }
 
+#[derive(Clone, Debug, Default)]
+struct BlockTracker {
+    block_by_peer: HashMap<PeerId, u64>,
+    peers_by_block: BTreeMap<u64, HashSet<PeerId>>,
+}
+
+impl BlockTracker {
+    fn set_block_number(&mut self, peer: PeerId, block: u64) {
+        if let Some(old_block) = self.block_by_peer.insert(peer, block) {
+            if let Entry::Occupied(mut entry) = self.peers_by_block.entry(old_block) {
+                entry.get_mut().remove(&peer);
+
+                if entry.get().is_empty() {
+                    entry.remove();
+                }
+            }
+        }
+        self.peers_by_block.entry(block).or_default().insert(peer);
+    }
+
+    fn remove_peer(&mut self, peer: PeerId) {
+        if let Some(block) = self.block_by_peer.remove(&peer) {
+            if let Entry::Occupied(mut entry) = self.peers_by_block.entry(block) {
+                entry.get_mut().remove(&peer);
+
+                if entry.get().is_empty() {
+                    entry.remove();
+                }
+            }
+        }
+    }
+
+    fn peers_with_min_block(&self, block: u64) -> HashSet<PeerId> {
+        self.peers_by_block
+            .range(block..)
+            .map(|(_, v)| v)
+            .flatten()
+            .copied()
+            .collect()
+    }
+}
+
 #[derive(Educe)]
 #[educe(Debug)]
 pub struct CapabilityServerImpl<C, DP>
@@ -79,8 +121,7 @@ where
 {
     #[educe(Debug(ignore))]
     peer_pipes: Arc<RwLock<HashMap<PeerId, Pipes>>>,
-    block_by_peer: Arc<RwLock<HashMap<PeerId, u64>>>,
-    peers_by_block: Arc<RwLock<BTreeMap<u64, HashSet<PeerId>>>>,
+    block_tracker: Arc<RwLock<BlockTracker>>,
 
     status_message: Arc<RwLock<Option<(StatusData, ForkFilter)>>>,
     valid_peers: Arc<RwLock<HashSet<PeerId>>>,
@@ -91,17 +132,10 @@ where
 impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
     fn setup_peer(&self, peer: PeerId, p: Pipes) {
         let mut pipes = self.peer_pipes.write();
-        let mut block_by_peer = self.block_by_peer.write();
-        let mut peers_by_block = self.peers_by_block.write();
-
-        let default_block = 0;
+        let mut block_tracker = self.block_tracker.write();
 
         assert!(pipes.insert(peer, p).is_none());
-        assert!(block_by_peer.insert(peer, default_block).is_none());
-        peers_by_block
-            .entry(default_block)
-            .or_default()
-            .insert(peer);
+        block_tracker.set_block_number(peer, 0);
     }
     fn get_pipes(&self, peer: PeerId) -> Option<Pipes> {
         self.peer_pipes.read().get(&peer).cloned()
@@ -120,36 +154,16 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
     }
     fn teardown_peer(&self, peer: PeerId) {
         let mut pipes = self.peer_pipes.write();
-        let mut block_by_peer = self.block_by_peer.write();
-        let mut peers_by_block = self.peers_by_block.write();
+        let mut block_tracker = self.block_tracker.write();
         let mut valid_peers = self.valid_peers.write();
 
         pipes.remove(&peer);
-        if let Some(block) = block_by_peer.remove(&peer) {
-            if let Entry::Occupied(mut entry) = peers_by_block.entry(block) {
-                entry.get_mut().remove(&peer);
-
-                if entry.get().is_empty() {
-                    entry.remove();
-                }
-            }
-        }
+        block_tracker.remove_peer(peer);
         valid_peers.remove(&peer);
     }
 
     pub fn all_peers(&self) -> HashSet<PeerId> {
         self.peer_pipes.read().keys().copied().collect()
-    }
-
-    pub fn peers_with_min_block(&self, block: u64) -> HashSet<PeerId> {
-        let peers_by_block = self.peers_by_block.read();
-
-        peers_by_block
-            .range(block..)
-            .map(|(_, v)| v)
-            .flatten()
-            .copied()
-            .collect()
     }
 
     pub fn connected_peers(&self) -> usize {
@@ -558,8 +572,7 @@ async fn main() -> anyhow::Result<()> {
 
     let capability_server = Arc::new(CapabilityServerImpl {
         peer_pipes: Default::default(),
-        block_by_peer: Default::default(),
-        peers_by_block: Default::default(),
+        block_tracker: Default::default(),
         status_message,
         valid_peers: Default::default(),
         control,
