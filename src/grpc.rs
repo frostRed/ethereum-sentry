@@ -19,6 +19,7 @@ impl TryFrom<MessageId> for control::InboundMessageId {
             MessageId::BlockHeaders => Self::BlockHeaders,
             MessageId::BlockBodies => Self::BlockBodies,
             MessageId::NewBlock => Self::NewBlock,
+            MessageId::NodeData => Self::NodeData,
             other => bail!("Invalid message id: {:?}", other),
         })
     }
@@ -29,6 +30,7 @@ impl MessageId {
         Some(match id {
             0 => Self::GetBlockHeaders,
             1 => Self::GetBlockBodies,
+            2 => Self::GetNodeData,
             _ => return None,
         })
     }
@@ -39,6 +41,7 @@ impl From<sentry::OutboundMessageId> for MessageId {
         match id {
             sentry::OutboundMessageId::GetBlockHeaders => Self::GetBlockHeaders,
             sentry::OutboundMessageId::GetBlockBodies => Self::GetBlockBodies,
+            sentry::OutboundMessageId::GetNodeData => Self::GetNodeData,
         }
     }
 }

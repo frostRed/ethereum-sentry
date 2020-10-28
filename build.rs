@@ -1,4 +1,4 @@
 fn main() {
-    tonic_build::compile_protos("proto/control.proto").unwrap();
-    tonic_build::compile_protos("proto/sentry.proto").unwrap();
+    tonic_build::compile_protos("proto/p2psentry/control.proto").unwrap();
+    tonic_build::compile_protos("proto/p2psentry/sentry.proto").unwrap();
 }
