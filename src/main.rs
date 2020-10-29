@@ -32,10 +32,15 @@ use std::{
     time::Duration,
 };
 use task_group::TaskGroup;
-use tokio::sync::{
-    mpsc::{channel, Sender},
-    Mutex as AsyncMutex,
+use tokio::{
+    stream::Stream,
+    sync::{
+        mpsc::{channel, Sender},
+        Mutex as AsyncMutex,
+    },
+    time::sleep,
 };
+use tokio_compat_02::FutureExt;
 use tonic::transport::Server;
 use tracing::*;
 use tracing_subscriber::EnvFilter;
@@ -433,7 +438,8 @@ async fn main() -> anyhow::Result<()> {
         hex::encode(devp2p::util::pk2id(&secret_key.verify_key()).as_bytes())
     );
 
-    let mut discovery_tasks: Vec<Arc<AsyncMutex<dyn Discovery>>> = vec![];
+    let mut discovery_tasks =
+        Vec::<Arc<AsyncMutex<dyn Stream<Item = _> + Send + Unpin + 'static>>>::new();
 
     if opts.dnsdisc {
         info!("Starting DNS discovery fetch from {}", opts.dnsdisc_address);
@@ -474,6 +480,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .map_err(|e| anyhow!("{}", e))?;
         svc.start(opts.discv5_addr.parse()?)
+            .await
             .map_err(|e| anyhow!("{}", e))
             .context("Failed to start discv5")?;
         info!("Starting discv5 at {}", opts.discv5_addr);
@@ -482,12 +489,12 @@ async fn main() -> anyhow::Result<()> {
 
     if !opts.reserved_peers.is_empty() {
         info!("Enabling reserved peers: {:?}", opts.reserved_peers);
-        discovery_tasks.push(Arc::new(AsyncMutex::new(
+        discovery_tasks.push(Arc::new(AsyncMutex::new(Bootnodes::from(
             opts.reserved_peers
                 .iter()
                 .map(|&NodeRecord { addr, id }| (addr, id))
                 .collect::<HashMap<_, _>>(),
-        )))
+        ))))
     }
 
     let tasks = Arc::new(TaskGroup::new());
@@ -566,7 +573,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                tokio::time::delay_for(Duration::from_secs(5)).await;
+                sleep(Duration::from_secs(5)).await;
             }
         }
     });
@@ -607,6 +614,7 @@ async fn main() -> anyhow::Result<()> {
         Server::builder()
             .add_service(svc)
             .serve(sentry_addr)
+            .compat()
             .await
             .unwrap();
     });
@@ -618,6 +626,6 @@ async fn main() -> anyhow::Result<()> {
             opts.max_peers
         );
 
-        tokio::time::delay_for(Duration::from_secs(5)).await;
+        sleep(Duration::from_secs(5)).await;
     }
 }

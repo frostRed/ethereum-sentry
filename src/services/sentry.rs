@@ -57,7 +57,7 @@ where
                         .map(|peer| {
                             let data = data.clone();
                             async move {
-                                if let Some(mut sender) = self.capability_server.sender(peer) {
+                                if let Some(sender) = self.capability_server.sender(peer) {
                                     if sender
                                         .send(OutboundEvent::Message {
                                             capability_name: capability_name(),
@@ -99,7 +99,7 @@ where
         let peer = hex::encode(&request.into_inner().peer_id)
             .parse::<PeerId>()
             .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?;
-        if let Some(mut sender) = self.capability_server.sender(peer) {
+        if let Some(sender) = self.capability_server.sender(peer) {
             let _ = sender
                 .send(OutboundEvent::Disconnect {
                     reason: DisconnectReason::DisconnectRequested,
