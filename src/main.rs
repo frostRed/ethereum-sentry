@@ -22,7 +22,7 @@ use k256::ecdsa::SigningKey;
 use maplit::btreemap;
 use num_traits::{FromPrimitive, ToPrimitive};
 use parking_lot::RwLock;
-use rand::rngs::OsRng;
+use rand::thread_rng;
 use rlp::Rlp;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
@@ -420,7 +420,7 @@ async fn main() -> anyhow::Result<()> {
     let secret_key = if let Some(data) = opts.node_key {
         SigningKey::new(&hex::decode(data)?)?
     } else {
-        SigningKey::random(&mut OsRng)
+        SigningKey::random(thread_rng())
     };
 
     let listen_addr = format!("0.0.0.0:{}", opts.listen_port);
