@@ -438,6 +438,10 @@ async fn main() -> anyhow::Result<()> {
         hex::encode(devp2p::util::pk2id(&secret_key.verify_key()).as_bytes())
     );
 
+    if let Some(cidr_filter) = &opts.cidr {
+        info!("Peers restricted to range {}", cidr_filter);
+    }
+
     let mut discovery_tasks =
         Vec::<Arc<AsyncMutex<dyn Stream<Item = _> + Send + Unpin + 'static>>>::new();
 
@@ -593,6 +597,7 @@ async fn main() -> anyhow::Result<()> {
             discovery_tasks,
             max_peers: opts.max_peers,
             addr: listen_addr.parse().unwrap(),
+            cidr: opts.cidr,
         })
         .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
         .build(

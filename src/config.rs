@@ -1,3 +1,4 @@
+use cidr::IpCidr;
 use clap::Clap;
 use devp2p::NodeRecord;
 use educe::Educe;
@@ -15,6 +16,8 @@ pub struct Opts {
     pub node_key: Option<String>,
     #[clap(long, env, default_value = "30303")]
     pub listen_port: u16,
+    #[clap(long, env)]
+    pub cidr: Option<IpCidr>,
     #[clap(long, env, default_value = "0.0.0.0:8000")]
     pub sentry_addr: String,
     #[clap(long, env)]
