@@ -4,15 +4,13 @@ use async_trait::async_trait;
 use auto_impl::auto_impl;
 use ethereum::{Header, Transaction};
 use ethereum_types::{H256, U64};
-use futures::{
-    stream::{BoxStream, FuturesUnordered},
-    TryStreamExt,
-};
+use futures::stream::{BoxStream, FuturesOrdered, FuturesUnordered};
 use rlp::{Decodable, DecoderError, Encodable, Rlp};
 use rlp_derive::{RlpDecodable, RlpEncodable};
 use serde::Deserialize;
 use serde_json::json;
 use std::fmt::Debug;
+use tokio::stream::StreamExt;
 use tokio_compat_02::FutureExt;
 use tracing::{span, Instrument, Level};
 
@@ -246,7 +244,7 @@ impl DataProvider for Web3DataProvider {
                         let block = self
                             .client
                             .eth()
-                            .block(id.into())
+                            .block_with_txs(id.into())
                             .compat()
                             .await?
                             .ok_or_else(|| anyhow!("Block not found"))?;
@@ -254,44 +252,43 @@ impl DataProvider for Web3DataProvider {
                         let header = web3_block_to_header(block.clone())
                             .ok_or_else(|| anyhow!("Pending block?"))?;
 
-                        let (ommers, transactions) = futures::future::try_join(
-                            async {
-                                Ok::<_, anyhow::Error>(
-                                    block
-                                        .uncles
-                                        .iter()
-                                        .map(|&uncle_hash| async move {
-                                            web3_block_to_header(
-                                                self.client
-                                                    .eth()
-                                                    .block(uncle_hash.into())
-                                                    .compat()
-                                                    .await?
-                                                    .ok_or_else(|| anyhow!("Uncle not found"))?,
-                                            )
-                                            .ok_or_else(|| anyhow!("Pending block?"))
-                                        })
-                                        .collect::<FuturesUnordered<_>>()
-                                        .try_collect()
-                                        .await
-                                        .context("Failed to fetch uncles")?,
-                                )
-                            },
-                            async {
-                                Ok(block
-                                    .transactions
-                                    .iter()
-                                    .map(|&id| self.get_transaction(id))
-                                    .collect::<FuturesUnordered<_>>()
-                                    .try_collect()
+                        let ommers = async {
+                            Ok::<_, anyhow::Error>(
+                                (0..block.uncles.len())
+                                    .map(|i| async move {
+                                        web3_block_to_header(
+                                            self.client
+                                                .eth()
+                                                .uncle(id.into(), i.into())
+                                                .compat()
+                                                .await?
+                                                .ok_or_else(|| anyhow!("Uncle not found"))?,
+                                        )
+                                        .ok_or_else(|| anyhow!("Pending block?"))
+                                    })
+                                    .collect::<FuturesOrdered<_>>()
+                                    .collect::<anyhow::Result<_>>()
                                     .await
-                                    .context("Failed to fetch transactions")?)
-                            },
-                        )
+                                    .context("Failed to fetch uncles")?,
+                            )
+                        }
                         .await?;
 
-                        let assembled_block =
-                            ethereum::Block::new(header.into(), transactions, ommers);
+                        let assembled_block = ethereum::Block::new(
+                            header.into(),
+                            block
+                                .transactions
+                                .into_iter()
+                                .map(|tx| {
+                                    Ok(rlp::decode(
+                                        &*tx.raw
+                                            .ok_or_else(|| anyhow!("Raw transaction data absent"))?
+                                            .0,
+                                    )?)
+                                })
+                                .collect::<anyhow::Result<_>>()?,
+                            ommers,
+                        );
                         ensure!(
                             id == assembled_block.header.hash(),
                             "Hash mismatch: expected {}, found {}",

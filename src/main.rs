@@ -297,7 +297,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .get_block_bodies(blocks)
                             .filter_map(|res| match res {
                                 Err(e) => {
-                                    warn!("{}", e);
+                                    warn!("{:?}", e);
                                     None
                                 }
                                 Ok(v) => Some(v),
