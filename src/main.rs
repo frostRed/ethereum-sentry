@@ -279,7 +279,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                         }
 
                         let id = MessageId::BlockHeaders;
-                        info!("Replying: {:?} / {:?}", id, output);
+                        info!("Replying: {:?} / {} headers", id, output.len());
 
                         return Ok(Some(Message {
                             id: id.to_usize().unwrap(),
@@ -306,7 +306,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .await;
 
                         let id = MessageId::BlockBodies;
-                        info!("Replying: {:?} / {:?}", id, output);
+                        info!("Replying: {:?} / {} blocks", id, output.len());
 
                         return Ok(Some(Message {
                             id: id.to_usize().unwrap(),
