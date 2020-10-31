@@ -3521,7 +3521,7 @@ dependencies = [
 [[package]]
 name = "web3"
 version = "0.14.0"
-source = "git+https://github.com/vorot93/rust-web3?branch=uncle-block-fix#38a9e86e7e20a55941ae1e69197ad077cdb226ad"
+source = "git+https://github.com/vorot93/rust-web3?branch=uncle-block-fix#24e27a75127080aa55fea025b69b2e8423ddff3d"
 dependencies = [
  "arrayvec",
  "base64 0.13.0",

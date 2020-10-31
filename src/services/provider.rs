@@ -2,7 +2,7 @@ use crate::eth::StatusData;
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use auto_impl::auto_impl;
-use ethereum::{Header, Transaction};
+use ethereum::{Header, Transaction, TransactionAction, TransactionSignature};
 use ethereum_types::{H256, U64};
 use futures::stream::{BoxStream, FuturesOrdered, FuturesUnordered};
 use rlp::{Decodable, DecoderError, Encodable, Rlp};
@@ -13,6 +13,7 @@ use std::fmt::Debug;
 use tokio::stream::StreamExt;
 use tokio_compat_02::FutureExt;
 use tracing::*;
+use web3::types::RawTransactionDetails;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockId {
@@ -265,7 +266,7 @@ impl DataProvider for Web3DataProvider {
                         let block = self
                             .client
                             .eth()
-                            .block_with_txs(id.into())
+                            .block_with_raw_txs(id.into())
                             .compat()
                             .await?
                             .ok_or_else(|| anyhow!("Block not found"))?;
@@ -301,12 +302,27 @@ impl DataProvider for Web3DataProvider {
                         let transactions = block
                             .transactions
                             .into_iter()
-                            .map(|tx| {
-                                Ok(rlp::decode(
-                                    &*tx.raw
-                                        .ok_or_else(|| anyhow!("Raw transaction data absent"))?
-                                        .0,
-                                )?)
+                            .map(|tx: RawTransactionDetails| {
+                                Ok(Transaction {
+                                    nonce: tx.nonce,
+                                    gas_price: tx.gas_price,
+                                    gas_limit: tx.gas,
+                                    action: if let Some(to) = tx.to {
+                                        TransactionAction::Call(to)
+                                    } else {
+                                        TransactionAction::Create
+                                    },
+                                    value: tx.value,
+                                    signature: TransactionSignature::new(
+                                        tx.v.ok_or_else(|| anyhow!("no v"))?.as_u64(),
+                                        <[u8; 32]>::from(tx.r.ok_or_else(|| anyhow!("no r"))?)
+                                            .into(),
+                                        <[u8; 32]>::from(tx.s.ok_or_else(|| anyhow!("no s"))?)
+                                            .into(),
+                                    )
+                                    .ok_or_else(|| anyhow!("invalid signature"))?,
+                                    input: tx.input.0,
+                                })
                             })
                             .collect::<anyhow::Result<_>>()?;
 
