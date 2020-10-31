@@ -17,7 +17,7 @@ use educe::Educe;
 use enr::CombinedKey;
 use ethereum::Transaction;
 use ethereum_forkid::ForkFilter;
-use futures::stream::{BoxStream, StreamExt};
+use futures::stream::BoxStream;
 use k256::ecdsa::SigningKey;
 use maplit::btreemap;
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -33,7 +33,7 @@ use std::{
 };
 use task_group::TaskGroup;
 use tokio::{
-    stream::Stream,
+    stream::{Stream, StreamExt},
     sync::{
         mpsc::{channel, Sender},
         Mutex as AsyncMutex,
@@ -220,60 +220,63 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .map_err(|_| DisconnectReason::ProtocolBreach)?;
                         debug!("Block headers requested: {:?}", selector);
 
-                        let selector = if selector.max_headers > 1 {
-                            // Just one. Fast case.
-                            vec![selector.block]
-                        } else {
-                            async {
-                                let anchor = match selector.block {
-                                    BlockId::Number(num) => num,
-                                    BlockId::Hash(hash) => {
-                                        match self.data_provider.resolve_block_height(hash).await {
-                                            Ok(Some(height)) => height,
-                                            Ok(None) => {
-                                                // this block does not exist, exit early.
-                                                return vec![];
-                                            }
-                                            Err(e) => {
-                                                warn!("Failed to resolve block {}: {}. Will query this one hash only", hash, e);
-                                                return vec![BlockId::Hash(hash)];
-                                            }
+                        let selector = async {
+                            let anchor = match selector.block {
+                                BlockId::Number(num) => num,
+                                BlockId::Hash(hash) => {
+                                    match self.data_provider.resolve_block_height(hash).await {
+                                        Ok(Some(height)) => height,
+                                        Ok(None) => {
+                                            // this block does not exist, exit early.
+                                            return vec![];
+                                        }
+                                        Err(e) => {
+                                            warn!("Failed to resolve block {}: {}", hash, e);
+                                            return vec![];
                                         }
                                     }
-                                };
-
-                                if selector.skip == 0 {
-                                    return vec![BlockId::Number(anchor)];
                                 }
+                            };
 
-                                std::iter::once(anchor)
-                                    .chain((0..selector.max_headers).map(|i| {
-                                        if selector.reverse {
-                                            anchor - selector.skip * i
-                                        } else {
-                                            anchor + selector.skip * i
-                                        }
-                                    }))
-                                    .map(BlockId::Number)
-                                    .collect()
-                            }
-                            .await
-                        };
+                            std::iter::empty()
+                                .chain((0..selector.max_headers).map(|i| {
+                                    let skip = selector.skip + 1;
+                                    if selector.reverse {
+                                        anchor - skip * i
+                                    } else {
+                                        anchor + skip * i
+                                    }
+                                }))
+                                .collect()
+                        }
+                        .await;
 
-                        let output = self
+                        let mut headers = self
                             .data_provider
-                            .get_block_headers(selector)
-                            .filter_map(|res| async move {
-                                match res {
-                                    Err(e) => {
-                                        warn!("{}", e);
-                                        None
-                                    }
-                                    Ok(v) => Some(v),
+                            .get_block_headers(
+                                selector.iter().copied().map(BlockId::Number).collect(),
+                            )
+                            .filter_map(|res| match res {
+                                Err(e) => {
+                                    warn!("{}", e);
+                                    None
                                 }
+                                Ok(v) => Some((v.number, v)),
                             })
                             .collect::<Vec<_>>()
-                            .await;
+                            .await
+                            .into_iter()
+                            .collect::<HashMap<_, _>>();
+
+                        let mut output = Vec::with_capacity(selector.len());
+
+                        for h in selector {
+                            if let Some(h) = headers.remove(&h.into()) {
+                                output.push(h);
+                            } else {
+                                break;
+                            }
+                        }
 
                         let id = MessageId::BlockHeaders;
                         info!("Replying: {:?} / {:?}", id, output);
@@ -292,14 +295,12 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                         let output: Vec<_> = self
                             .data_provider
                             .get_block_bodies(blocks)
-                            .filter_map(|res| async move {
-                                match res {
-                                    Err(e) => {
-                                        warn!("{}", e);
-                                        None
-                                    }
-                                    Ok(v) => Some(v),
+                            .filter_map(|res| match res {
+                                Err(e) => {
+                                    warn!("{}", e);
+                                    None
                                 }
+                                Ok(v) => Some(v),
                             })
                             .collect::<Vec<_>>()
                             .await;
