@@ -21,7 +21,7 @@ dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust
 educe = { version = "0.4", features = ["Debug"] }
 enr = "0.4"
 enum-primitive-derive = "0.2"
-ethereum = { git = "https://github.com/rust-blockchain/ethereum", default-features = false }
+ethereum = { git = "https://github.com/rust-blockchain/ethereum", branch = "vorot93/bytes-alias", default-features = false }
 ethereum-forkid = "0.3"
 ethereum-types = { version = "0.9", default-features = false }
 futures = "0.3"

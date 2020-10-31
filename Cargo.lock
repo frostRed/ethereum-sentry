@@ -875,7 +875,7 @@ dependencies = [
 [[package]]
 name = "ethereum"
 version = "0.4.1"
-source = "git+https://github.com/rust-blockchain/ethereum#38917f5da1d09b2d2c7173953b4273e233ede4bb"
+source = "git+https://github.com/rust-blockchain/ethereum?branch=vorot93/bytes-alias#e59275026bae9b398e872acc5fd0b50bcf2d2bac"
 dependencies = [
  "ethereum-types",
  "rlp",
