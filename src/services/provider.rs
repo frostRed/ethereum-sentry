@@ -1,5 +1,5 @@
 use crate::eth::StatusData;
-use anyhow::{anyhow, bail, ensure, Context};
+use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use auto_impl::auto_impl;
 use ethereum::{Header, Transaction};
@@ -12,7 +12,7 @@ use serde_json::json;
 use std::fmt::Debug;
 use tokio::stream::StreamExt;
 use tokio_compat_02::FutureExt;
-use tracing::{span, Instrument, Level};
+use tracing::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockId {
@@ -79,6 +79,26 @@ fn web3_block_to_header<TX>(block: web3::types::Block<TX>) -> Option<Header> {
         extra_data: block.extra_data.0,
         mix_hash: block.mix_hash?,
         nonce: block.nonce?,
+    })
+}
+
+fn web3_header_to_header(header: web3::types::BlockHeader) -> Option<Header> {
+    Some(Header {
+        parent_hash: header.parent_hash,
+        ommers_hash: header.uncles_hash,
+        beneficiary: header.author,
+        state_root: header.state_root,
+        transactions_root: header.transactions_root,
+        receipts_root: header.receipts_root,
+        logs_bloom: header.logs_bloom,
+        difficulty: header.difficulty,
+        number: header.number?.as_u64().into(),
+        gas_limit: header.gas_limit,
+        gas_used: header.gas_used,
+        timestamp: header.timestamp.as_u64(),
+        extra_data: header.extra_data.0,
+        mix_hash: header.mix_hash?,
+        nonce: header.nonce?,
     })
 }
 
@@ -235,6 +255,7 @@ impl DataProvider for Web3DataProvider {
         )
     }
 
+    #[instrument(skip(self))]
     fn get_block_bodies(&self, blocks: Vec<H256>) -> BoxStream<anyhow::Result<BlockBody>> {
         Box::pin(
             blocks
@@ -249,14 +270,17 @@ impl DataProvider for Web3DataProvider {
                             .await?
                             .ok_or_else(|| anyhow!("Block not found"))?;
 
-                        let header = web3_block_to_header(block.clone())
-                            .ok_or_else(|| anyhow!("Pending block?"))?;
+                        trace!("Got block: {:?}", block);
 
                         let ommers = async {
                             Ok::<_, anyhow::Error>(
-                                (0..block.uncles.len())
-                                    .map(|i| async move {
-                                        web3_block_to_header(
+                                block
+                                    .uncles
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, hash)| async move {
+                                        trace!("fetching uncle {}/{}", i, hash);
+                                        web3_header_to_header(
                                             self.client
                                                 .eth()
                                                 .uncle(id.into(), i.into())
@@ -274,33 +298,17 @@ impl DataProvider for Web3DataProvider {
                         }
                         .await?;
 
-                        let assembled_block = ethereum::Block::new(
-                            header.into(),
-                            block
-                                .transactions
-                                .into_iter()
-                                .map(|tx| {
-                                    Ok(rlp::decode(
-                                        &*tx.raw
-                                            .ok_or_else(|| anyhow!("Raw transaction data absent"))?
-                                            .0,
-                                    )?)
-                                })
-                                .collect::<anyhow::Result<_>>()?,
-                            ommers,
-                        );
-                        ensure!(
-                            id == assembled_block.header.hash(),
-                            "Hash mismatch: expected {}, found {}",
-                            id,
-                            assembled_block.header.hash()
-                        );
-
-                        let ethereum::Block {
-                            transactions,
-                            ommers,
-                            ..
-                        } = assembled_block;
+                        let transactions = block
+                            .transactions
+                            .into_iter()
+                            .map(|tx| {
+                                Ok(rlp::decode(
+                                    &*tx.raw
+                                        .ok_or_else(|| anyhow!("Raw transaction data absent"))?
+                                        .0,
+                                )?)
+                            })
+                            .collect::<anyhow::Result<_>>()?;
 
                         Ok(BlockBody {
                             transactions,
@@ -310,11 +318,11 @@ impl DataProvider for Web3DataProvider {
                     .instrument(span!(
                         Level::TRACE,
                         "get block bodies",
-                        "blocks={:?}",
-                        blocks,
+                        "block={:?}",
+                        id,
                     ))
                 })
-                .collect::<FuturesUnordered<_>>(),
+                .collect::<FuturesOrdered<_>>(),
         )
     }
 }
