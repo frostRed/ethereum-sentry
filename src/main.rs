@@ -251,30 +251,21 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                         }
                         .await;
 
-                        let mut headers = self
-                            .data_provider
-                            .get_block_headers(
-                                selector.iter().copied().map(BlockId::Number).collect(),
-                            )
-                            .filter_map(|res| match res {
-                                Err(e) => {
-                                    warn!("{}", e);
-                                    None
-                                }
-                                Ok(v) => Some((v.number, v)),
-                            })
-                            .collect::<Vec<_>>()
-                            .await
-                            .into_iter()
-                            .collect::<HashMap<_, _>>();
+                        let mut block_headers = self.data_provider.get_block_headers(
+                            selector.iter().copied().map(BlockId::Number).collect(),
+                        );
 
                         let mut output = Vec::with_capacity(selector.len());
-
-                        for h in selector {
-                            if let Some(h) = headers.remove(&h.into()) {
-                                output.push(h);
-                            } else {
-                                break;
+                        while let Some(res) = block_headers.next().await {
+                            match res {
+                                Ok(v) => output.push(v),
+                                Err(e) => {
+                                    warn!(
+                                        "Failed to get block header: {}, stopping header query",
+                                        e
+                                    );
+                                    break;
+                                }
                             }
                         }
 

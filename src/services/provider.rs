@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use auto_impl::auto_impl;
 use ethereum::{Header, Transaction, TransactionAction, TransactionSignature};
 use ethereum_types::{H256, U64};
-use futures::stream::{BoxStream, FuturesOrdered, FuturesUnordered};
+use futures::stream::{BoxStream, FuturesOrdered};
 use rlp::{Decodable, DecoderError, Encodable, Rlp};
 use rlp_derive::{RlpDecodable, RlpEncodable};
 use serde::Deserialize;
@@ -252,7 +252,7 @@ impl DataProvider for Web3DataProvider {
 
                     web3_block_to_header(block).ok_or_else(|| anyhow!("Pending block"))
                 })
-                .collect::<FuturesUnordered<_>>(),
+                .collect::<FuturesOrdered<_>>(),
         )
     }
 
