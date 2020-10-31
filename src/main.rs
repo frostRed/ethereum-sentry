@@ -213,7 +213,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                     Some(MessageId::GetBlockHeaders) if valid_peer => {
                         let selector = rlp::decode::<GetBlockHeaders>(&*data)
                             .map_err(|_| DisconnectReason::ProtocolBreach)?;
-                        info!("Block headers requested: {:?}", selector);
+                        debug!("Block headers requested: {:?}", selector);
 
                         let selector = if selector.max_headers > 1 {
                             // Just one. Fast case.
@@ -271,13 +271,11 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .await;
 
                         let id = MessageId::BlockHeaders;
-                        let data = rlp::encode_list(&output);
-
-                        info!("Replying: {:?} / {}", id, hex::encode(&data));
+                        info!("Replying: {:?} / {:?}", id, output);
 
                         return Ok(Some(Message {
                             id: id.to_usize().unwrap(),
-                            data: data.into(),
+                            data: rlp::encode_list(&output).into(),
                         }));
                     }
                     Some(MessageId::GetBlockBodies) if valid_peer => {
@@ -301,8 +299,11 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .collect::<Vec<_>>()
                             .await;
 
+                        let id = MessageId::BlockBodies;
+                        info!("Replying: {:?} / {:?}", id, output);
+
                         return Ok(Some(Message {
-                            id: MessageId::BlockBodies.to_usize().unwrap(),
+                            id: id.to_usize().unwrap(),
                             data: rlp::encode_list(&output).into(),
                         }));
                     }
