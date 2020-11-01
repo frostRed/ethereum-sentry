@@ -15,7 +15,6 @@ use clap::Clap;
 use devp2p::*;
 use educe::Educe;
 use enr::CombinedKey;
-use ethereum::Transaction;
 use ethereum_forkid::ForkFilter;
 use futures::stream::BoxStream;
 use k256::ecdsa::SigningKey;
@@ -25,7 +24,7 @@ use parking_lot::RwLock;
 use rand::thread_rng;
 use rlp::Rlp;
 use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
     convert::TryFrom,
     fmt::Debug,
     sync::Arc,
@@ -339,10 +338,12 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
 #[async_trait]
 impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, DP> {
     #[instrument(skip(self, peer), level = "debug", fields(peer=&*peer.to_string()))]
-    fn on_peer_connect(&self, peer: PeerId, _: BTreeSet<CapabilityId>) {
+    fn on_peer_connect(&self, peer: PeerId, caps: HashMap<CapabilityName, CapabilityVersion>) {
         let first_events = if let Some((status_data, fork_filter)) = &*self.status_message.read() {
             let status_message = StatusMessage {
-                protocol_version: 64,
+                protocol_version: *caps
+                    .get(&capability_name())
+                    .expect("peer without this cap would have been disconnected"),
                 network_id: status_data.network_id,
                 total_difficulty: status_data.total_difficulty,
                 best_hash: status_data.best_hash,
@@ -350,22 +351,13 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
                 fork_id: fork_filter.current(),
             };
 
-            vec![
-                OutboundEvent::Message {
-                    capability_name: capability_name(),
-                    message: Message {
-                        id: MessageId::Status.to_usize().unwrap(),
-                        data: rlp::encode(&status_message).into(),
-                    },
+            vec![OutboundEvent::Message {
+                capability_name: capability_name(),
+                message: Message {
+                    id: MessageId::Status.to_usize().unwrap(),
+                    data: rlp::encode(&status_message).into(),
                 },
-                OutboundEvent::Message {
-                    capability_name: capability_name(),
-                    message: Message {
-                        id: MessageId::Transactions.to_usize().unwrap(),
-                        data: rlp::encode_list(&Vec::<Transaction>::new()).into(),
-                    },
-                },
-            ]
+            }]
         } else {
             vec![OutboundEvent::Disconnect {
                 reason: DisconnectReason::DisconnectRequested,
@@ -601,7 +593,10 @@ async fn main() -> anyhow::Result<()> {
         })
         .with_client_version(format!("sentry/v{}", env!("CARGO_PKG_VERSION")))
         .build(
-            btreemap! { CapabilityId { name: capability_name(), version: 64 } => 17 },
+            btreemap! {
+                CapabilityId { name: capability_name(), version: 64 } => 17,
+                CapabilityId { name: capability_name(), version: 65 } => 17,
+            },
             capability_server.clone(),
             secret_key,
         )
