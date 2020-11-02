@@ -218,7 +218,11 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                     Some(MessageId::GetBlockHeaders) if valid_peer => {
                         let selector = rlp::decode::<GetBlockHeaders>(&*data)
                             .map_err(|_| DisconnectReason::ProtocolBreach)?;
-                        debug!("Block headers requested: {:?}", selector);
+                        info!(
+                            "Requested: {:?} / selector: {:?}",
+                            MessageId::GetBlockHeaders,
+                            selector
+                        );
 
                         let selector = async {
                             let anchor = match selector.block {
@@ -281,7 +285,11 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                         let blocks = Rlp::new(&*data)
                             .as_list()
                             .map_err(|_| DisconnectReason::ProtocolBreach)?;
-                        info!("Block bodies requested: {:?}", blocks);
+                        info!(
+                            "Requested: {:?} / {} block bodies",
+                            MessageId::GetBlockBodies,
+                            blocks.len()
+                        );
 
                         let output: Vec<_> = self
                             .data_provider
@@ -297,7 +305,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .await;
 
                         let id = MessageId::BlockBodies;
-                        info!("Replying: {:?} / {} blocks", id, output.len());
+                        info!("Replying: {:?} / {} block bodies", id, output.len());
 
                         return Ok(Some(Message {
                             id: id.to_usize().unwrap(),
