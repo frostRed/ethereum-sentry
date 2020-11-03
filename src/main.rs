@@ -56,8 +56,7 @@ struct DummyControl;
 
 #[async_trait]
 impl Control for DummyControl {
-    async fn forward_inbound_message(&self, message: InboundMessage) -> anyhow::Result<()> {
-        debug!("Received inbound message: {:?}", message);
+    async fn forward_inbound_message(&self, _: InboundMessage) -> anyhow::Result<()> {
         Ok(())
     }
     async fn get_status_data(&self) -> anyhow::Result<StatusData> {
@@ -174,6 +173,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
         self.peer_pipes.read().len()
     }
 
+    #[instrument(skip(self))]
     async fn handle_event(
         &self,
         peer: PeerId,
@@ -181,6 +181,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
     ) -> Result<Option<Message>, DisconnectReason> {
         match event {
             InboundEvent::Disconnect { .. } => {
+                debug!("Spinning down peer");
                 self.teardown_peer(peer);
             }
             InboundEvent::Message {
@@ -191,22 +192,22 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                 let message_id = MessageId::from_usize(id);
                 match message_id {
                     None => {
-                        warn!("Unknown message");
+                        debug!("Unknown message");
                     }
                     Some(MessageId::Status) => {
                         let v = rlp::decode::<StatusMessage>(&data).map_err(|e| {
-                            info!("Failed to decode status message: {}! Kicking peer.", e);
+                            debug!("Failed to decode status message: {}! Kicking peer.", e);
 
                             DisconnectReason::ProtocolBreach
                         })?;
 
-                        info!("Decoded status message: {:?}", v);
+                        debug!("Decoded status message: {:?}", v);
 
                         let status_data = self.status_message.read();
                         let mut valid_peers = self.valid_peers.write();
                         if let Some((_, fork_filter)) = &*status_data {
                             fork_filter.is_compatible(v.fork_id).map_err(|reason| {
-                                info!("Kicking peer with incompatible fork ID: {:?}", reason);
+                                debug!("Kicking peer with incompatible fork ID: {:?}", reason);
 
                                 DisconnectReason::UselessPeer
                             })?;
@@ -217,11 +218,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                     Some(MessageId::GetBlockHeaders) if valid_peer => {
                         let selector = rlp::decode::<GetBlockHeaders>(&*data)
                             .map_err(|_| DisconnectReason::ProtocolBreach)?;
-                        info!(
-                            "Requested: {:?} / selector: {:?}",
-                            MessageId::GetBlockHeaders,
-                            selector
-                        );
+                        debug!("Requested headers: {:?}", selector);
 
                         let selector = async {
                             let anchor = match selector.block {
@@ -234,7 +231,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                                             return vec![];
                                         }
                                         Err(e) => {
-                                            warn!("Failed to resolve block {}: {}", hash, e);
+                                            debug!("Failed to resolve block {}: {}", hash, e);
                                             return vec![];
                                         }
                                     }
@@ -263,7 +260,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             match res {
                                 Ok(v) => output.push(v),
                                 Err(e) => {
-                                    warn!(
+                                    debug!(
                                         "Failed to get block header: {}, stopping header query",
                                         e
                                     );
@@ -273,7 +270,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                         }
 
                         let id = MessageId::BlockHeaders;
-                        info!("Replying: {:?} / {} headers", id, output.len());
+                        debug!("Replying: {:?} / {} headers", id, output.len());
 
                         return Ok(Some(Message {
                             id: id.to_usize().unwrap(),
@@ -284,18 +281,14 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                         let blocks = Rlp::new(&*data)
                             .as_list()
                             .map_err(|_| DisconnectReason::ProtocolBreach)?;
-                        info!(
-                            "Requested: {:?} / {} block bodies",
-                            MessageId::GetBlockBodies,
-                            blocks.len()
-                        );
+                        debug!("Requested {} block bodies", blocks.len());
 
                         let output: Vec<_> = self
                             .data_provider
                             .get_block_bodies(blocks)
                             .filter_map(|res| match res {
                                 Err(e) => {
-                                    warn!("{:?}", e);
+                                    debug!("{:?}", e);
                                     None
                                 }
                                 Ok(v) => Some(v),
@@ -304,7 +297,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                             .await;
 
                         let id = MessageId::BlockBodies;
-                        info!("Replying: {:?} / {} block bodies", id, output.len());
+                        debug!("Replying: {:?} / {} block bodies", id, output.len());
 
                         return Ok(Some(Message {
                             id: id.to_usize().unwrap(),
@@ -648,8 +641,9 @@ async fn main() -> anyhow::Result<()> {
 
     loop {
         info!(
-            "Current peers: {}/{}.",
+            "Peer info: {} active (+{} dialing) / {} max.",
             swarm.connected_peers(),
+            swarm.dialing(),
             opts.max_peers
         );
 
