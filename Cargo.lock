@@ -545,7 +545,7 @@ dependencies = [
 [[package]]
 name = "devp2p"
 version = "0.3.1"
-source = "git+https://github.com/rust-ethereum/devp2p#82caee12263c33cd97b2785f03bb0484d195eafb"
+source = "git+https://github.com/rust-ethereum/devp2p#b3bce5b889169a45bada99a6495cee86e4197de5"
 dependencies = [
  "aes",
  "aes-ctr",

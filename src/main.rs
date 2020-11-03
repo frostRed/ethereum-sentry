@@ -32,7 +32,7 @@ use std::{
 };
 use task_group::TaskGroup;
 use tokio::{
-    stream::{Stream, StreamExt},
+    stream::{StreamExt, StreamMap},
     sync::{
         mpsc::{channel, Sender},
         Mutex as AsyncMutex,
@@ -434,8 +434,7 @@ async fn main() -> anyhow::Result<()> {
         info!("Peers restricted to range {}", cidr_filter);
     }
 
-    let mut discovery_tasks =
-        Vec::<Arc<AsyncMutex<dyn Stream<Item = _> + Send + Unpin + 'static>>>::new();
+    let mut discovery_tasks = StreamMap::new();
 
     if opts.dnsdisc {
         info!("Starting DNS discovery fetch from {}", opts.dnsdisc_address);
@@ -447,28 +446,34 @@ async fn main() -> anyhow::Result<()> {
             .await?,
         ));
 
-        discovery_tasks.push(Arc::new(AsyncMutex::new(DnsDiscovery::new(
-            Arc::new(dns_resolver),
-            opts.dnsdisc_address,
-            None,
-        ))));
+        discovery_tasks.insert(
+            "dnsdisc".to_string(),
+            Box::pin(DnsDiscovery::new(
+                Arc::new(dns_resolver),
+                opts.dnsdisc_address,
+                None,
+            )) as Discovery,
+        );
     }
 
     if opts.discv4 {
         info!("Starting discv4 at port {}", opts.discv4_port);
-        discovery_tasks.push(Arc::new(AsyncMutex::new(Discv4::new(
-            discv4::Node::new(
-                format!("0.0.0.0:{}", opts.discv4_port).parse().unwrap(),
-                SigningKey::new(secret_key.to_bytes().as_slice()).unwrap(),
-                opts.discv4_bootnodes,
-                None,
-                true,
-                opts.listen_port,
-            )
-            .await
-            .unwrap(),
-            20,
-        ))))
+        discovery_tasks.insert(
+            "discv4".to_string(),
+            Box::pin(Discv4::new(
+                discv4::Node::new(
+                    format!("0.0.0.0:{}", opts.discv4_port).parse().unwrap(),
+                    SigningKey::new(secret_key.to_bytes().as_slice()).unwrap(),
+                    opts.discv4_bootnodes,
+                    None,
+                    true,
+                    opts.listen_port,
+                )
+                .await
+                .unwrap(),
+                20,
+            )),
+        );
     }
 
     if opts.discv5 {
@@ -484,17 +489,20 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow!("{}", e))
             .context("Failed to start discv5")?;
         info!("Starting discv5 at {}", opts.discv5_addr);
-        discovery_tasks.push(Arc::new(AsyncMutex::new(Discv5::new(svc, 20))));
+        discovery_tasks.insert("discv5".to_string(), Box::pin(Discv5::new(svc, 20)));
     }
 
     if !opts.reserved_peers.is_empty() {
         info!("Enabling reserved peers: {:?}", opts.reserved_peers);
-        discovery_tasks.push(Arc::new(AsyncMutex::new(Bootnodes::from(
-            opts.reserved_peers
-                .iter()
-                .map(|&NodeRecord { addr, id }| (addr, id))
-                .collect::<HashMap<_, _>>(),
-        ))))
+        discovery_tasks.insert(
+            "reserved peers".to_string(),
+            Box::pin(Bootnodes::from(
+                opts.reserved_peers
+                    .iter()
+                    .map(|&NodeRecord { addr, id }| (addr, id))
+                    .collect::<HashMap<_, _>>(),
+            )),
+        );
     }
 
     let tasks = Arc::new(TaskGroup::new());
