@@ -14,11 +14,12 @@ auto_impl = "0.4"
 bytes = "0.6"
 cidr = "0.1"
 clap = "3.0.0-beta.2"
+derive_more = "0.99"
 devp2p = { git = "https://github.com/rust-ethereum/devp2p", features = ["discv4", "discv5", "dnsdisc"] }
 discv4 = { git = "https://github.com/rust-ethereum/discv4" }
 discv5 = { git = "https://github.com/sigp/discv5", default-features = false }
 dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust-dns"] }
-educe = { version = "0.4", features = ["Debug"] }
+educe = { version = "0.4", features = ["Debug", "Default"] }
 enr = "0.4"
 enum-primitive-derive = "0.2"
 ethereum = { git = "https://github.com/rust-blockchain/ethereum", branch = "vorot93/bytes-alias", default-features = false }
@@ -39,17 +40,19 @@ rlp = "0.4"
 rlp-derive = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_with = "1"
 sha3 = "0.9"
 task-group = { git = "https://github.com/vorot93/task-group" }
 tokio = { version = "0.3", features = ["full"] }
 tokio-compat-02 = "0.1"
+toml = "0.5"
 tonic = { version = "0.3", features = ["tls"] }
 tonic-health = "0.2"
 tracing = "0.1"
 tracing-futures = "0.2"
 tracing-subscriber = "0.2"
 trust-dns-resolver = "0.19"
-url = "2"
+url = { version = "2", features = ["serde"] }
 web3 = { git = "https://github.com/vorot93/rust-web3", branch = "uncle-block-fix", default-features = false, features = ["http-tls"] }
 
 [build-dependencies]

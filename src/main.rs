@@ -413,7 +413,9 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let opts = Opts::parse();
+    let opts =
+        toml::from_str::<Config>(&std::fs::read_to_string(Opts::parse().config_path).unwrap())
+            .unwrap();
 
     let secret_key = if let Some(data) = opts.node_key {
         SigningKey::new(&hex::decode(data)?)?
@@ -436,8 +438,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut discovery_tasks = StreamMap::new();
 
-    if opts.dnsdisc {
-        info!("Starting DNS discovery fetch from {}", opts.dnsdisc_address);
+    if let Some(dnsdisc_opts) = opts.dnsdisc {
+        info!("Starting DNS discovery fetch from {}", dnsdisc_opts.address);
         let dns_resolver = dnsdisc::Resolver::new(Arc::new(
             async {
                 TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()).await
@@ -450,45 +452,58 @@ async fn main() -> anyhow::Result<()> {
             "dnsdisc".to_string(),
             Box::pin(DnsDiscovery::new(
                 Arc::new(dns_resolver),
-                opts.dnsdisc_address,
+                dnsdisc_opts.address,
                 None,
             )) as Discovery,
         );
     }
 
-    if opts.discv4 {
-        info!("Starting discv4 at port {}", opts.discv4_port);
+    if let Some(discv4_opts) = opts.discv4 {
+        info!("Starting discv4 at port {}", discv4_opts.port);
         discovery_tasks.insert(
             "discv4".to_string(),
-            Box::pin(Discv4::new(
-                discv4::Node::new(
-                    format!("0.0.0.0:{}", opts.discv4_port).parse().unwrap(),
-                    SigningKey::new(secret_key.to_bytes().as_slice()).unwrap(),
-                    opts.discv4_bootnodes,
-                    None,
-                    true,
-                    opts.listen_port,
-                )
-                .await
-                .unwrap(),
-                20,
-            )),
+            Box::pin(
+                Discv4Builder::default()
+                    .with_cache(discv4_opts.cache)
+                    .with_concurrent_lookups(discv4_opts.concurrent_lookups)
+                    .build(
+                        discv4::Node::new(
+                            format!("0.0.0.0:{}", discv4_opts.port).parse().unwrap(),
+                            SigningKey::new(secret_key.to_bytes().as_slice()).unwrap(),
+                            discv4_opts
+                                .bootnodes
+                                .into_iter()
+                                .map(|Dicv4NR(nr)| nr)
+                                .collect(),
+                            None,
+                            true,
+                            opts.listen_port,
+                        )
+                        .await
+                        .unwrap(),
+                    ),
+            ),
         );
     }
 
-    if opts.discv5 {
+    if let Some(discv5_opts) = opts.discv5 {
         let mut svc = discv5::Discv5::new(
-            opts.discv5_enr
+            discv5_opts
+                .enr
                 .ok_or_else(|| anyhow!("discv5 ENR not specified"))?,
             CombinedKey::Secp256k1(SigningKey::new(secret_key.to_bytes().as_slice()).unwrap()),
             Default::default(),
         )
         .map_err(|e| anyhow!("{}", e))?;
-        svc.start(opts.discv5_addr.parse()?)
+        svc.start(discv5_opts.addr.parse()?)
             .await
             .map_err(|e| anyhow!("{}", e))
             .context("Failed to start discv5")?;
-        info!("Starting discv5 at {}", opts.discv5_addr);
+        info!("Starting discv5 at {}", discv5_opts.addr);
+
+        for bootnode in discv5_opts.bootnodes {
+            svc.add_enr(bootnode).unwrap();
+        }
         discovery_tasks.insert("discv5".to_string(), Box::pin(Discv5::new(svc, 20)));
     }
 
@@ -499,7 +514,7 @@ async fn main() -> anyhow::Result<()> {
             Box::pin(Bootnodes::from(
                 opts.reserved_peers
                     .iter()
-                    .map(|&NodeRecord { addr, id }| (addr, id))
+                    .map(|&NR(NodeRecord { addr, id })| (addr, id))
                     .collect::<HashMap<_, _>>(),
             )),
         );
