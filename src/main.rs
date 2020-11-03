@@ -440,7 +440,11 @@ async fn main() -> anyhow::Result<()> {
     if opts.dnsdisc {
         info!("Starting DNS discovery fetch from {}", opts.dnsdisc_address);
         let dns_resolver = dnsdisc::Resolver::new(Arc::new(
-            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()).await?,
+            async {
+                TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()).await
+            }
+            .compat()
+            .await?,
         ));
 
         discovery_tasks.push(Arc::new(AsyncMutex::new(DnsDiscovery::new(
