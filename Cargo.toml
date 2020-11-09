@@ -20,7 +20,7 @@ discv4 = { git = "https://github.com/rust-ethereum/discv4" }
 discv5 = { git = "https://github.com/sigp/discv5", default-features = false }
 dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust-dns"] }
 educe = { version = "0.4", features = ["Debug", "Default"] }
-enr = "0.4"
+enr = { git = "https://github.com/rust-ethereum/enr", default-features = false, features = ["rust-secp256k1"] }
 enum-primitive-derive = "0.2"
 ethereum = { git = "https://github.com/rust-blockchain/ethereum", default-features = false }
 ethereum-forkid = "0.3"
@@ -34,14 +34,13 @@ num-traits = "0.2"
 parking_lot = "0.11"
 plain_hasher = "0.2"
 prost = "0.6"
-rand = "0.7"
 reqwest = { version = "0.10", features = ["json"] }
 rlp = "0.4"
 rlp-derive = "0.1"
+secp256k1 = { version = "0.19", features = ["endomorphism", "global-context", "rand-std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = "1"
-sha3 = "0.9"
 task-group = { git = "https://github.com/vorot93/task-group" }
 tokio = { version = "0.3", features = ["full"] }
 tokio-compat-02 = "0.1"
@@ -57,3 +56,6 @@ web3 = { git = "https://github.com/vorot93/rust-web3", branch = "uncle-block-fix
 
 [build-dependencies]
 tonic-build = "0.3"
+
+[dev-dependencies]
+rand = "0.7"

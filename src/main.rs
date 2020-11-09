@@ -14,15 +14,13 @@ use async_trait::async_trait;
 use clap::Clap;
 use devp2p::*;
 use educe::Educe;
-use enr::CombinedKey;
 use ethereum_forkid::ForkFilter;
 use futures::stream::BoxStream;
-use k256::ecdsa::SigningKey;
 use maplit::btreemap;
 use num_traits::{FromPrimitive, ToPrimitive};
 use parking_lot::RwLock;
-use rand::thread_rng;
 use rlp::Rlp;
+use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
     collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
     convert::TryFrom,
@@ -411,9 +409,9 @@ async fn main() -> anyhow::Result<()> {
             .unwrap();
 
     let secret_key = if let Some(data) = opts.node_key {
-        SigningKey::new(&hex::decode(data)?)?
+        SecretKey::from_slice(&hex::decode(data)?)?
     } else {
-        SigningKey::random(thread_rng())
+        SecretKey::new(&mut secp256k1::rand::thread_rng())
     };
 
     let listen_addr = format!("0.0.0.0:{}", opts.listen_port);
@@ -422,7 +420,9 @@ async fn main() -> anyhow::Result<()> {
 
     info!(
         "Node ID: {}",
-        hex::encode(devp2p::util::pk2id(&secret_key.verify_key()).as_bytes())
+        hex::encode(
+            devp2p::util::pk2id(&PublicKey::from_secret_key(SECP256K1, &secret_key)).as_bytes()
+        )
     );
 
     if let Some(cidr_filter) = &opts.cidr {
@@ -462,7 +462,7 @@ async fn main() -> anyhow::Result<()> {
                     .build(
                         discv4::Node::new(
                             format!("0.0.0.0:{}", discv4_opts.port).parse().unwrap(),
-                            SigningKey::new(secret_key.to_bytes().as_slice()).unwrap(),
+                            secret_key,
                             discv4_opts
                                 .bootnodes
                                 .into_iter()
@@ -484,7 +484,9 @@ async fn main() -> anyhow::Result<()> {
             discv5_opts
                 .enr
                 .ok_or_else(|| anyhow!("discv5 ENR not specified"))?,
-            CombinedKey::Secp256k1(SigningKey::new(secret_key.to_bytes().as_slice()).unwrap()),
+            discv5::enr::CombinedKey::Secp256k1(
+                k256::ecdsa::SigningKey::new(secret_key.as_ref()).unwrap(),
+            ),
             Default::default(),
         )
         .map_err(|e| anyhow!("{}", e))?;
