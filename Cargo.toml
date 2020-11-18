@@ -52,7 +52,7 @@ tracing-futures = "0.2"
 tracing-subscriber = "0.2"
 trust-dns-resolver = "0.19"
 url = { version = "2", features = ["serde"] }
-web3 = { git = "https://github.com/vorot93/rust-web3", branch = "uncle-block-fix", default-features = false, features = ["http-tls"] }
+web3 = { git = "https://github.com/vorot93/rust-web3", branch = "dev", default-features = false, features = ["http-tls"] }
 
 [build-dependencies]
 tonic-build = "0.3"

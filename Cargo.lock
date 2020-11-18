@@ -63,9 +63,9 @@ dependencies = [
 
 [[package]]
 name = "aes-soft"
-version = "0.6.3"
+version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e8bdbc97ba3854ecf597a3b69d7bd30a719dee72d22ce6313c84dbf2c8f2694"
+checksum = "be14c7498ea50828a38d0e24a765ed2effe92a705885b57d029cd67d45744072"
 dependencies = [
  "cipher",
  "opaque-debug",
@@ -913,8 +913,8 @@ dependencies = [
 
 [[package]]
 name = "ethereum"
-version = "0.4.2"
-source = "git+https://github.com/rust-blockchain/ethereum#3250a2820b332f54851d263ac84915314263cc68"
+version = "0.5.1"
+source = "git+https://github.com/rust-blockchain/ethereum#3c6d16e4bc4e6396c6cb75e20771e2233a1cfd1b"
 dependencies = [
  "ethereum-types",
  "hash-db",
@@ -1798,13 +1798,13 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "0.7.5"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8962c171f57fcfffa53f4df1bb15ec4c8cf26a7569459c9ceb62d94aab0d9584"
+checksum = "f33bc887064ef1fd66020c9adfc45bb9f33d75a42096c81e7c56c65b75dd1a8b"
 dependencies = [
  "libc",
  "log",
- "miow 0.3.5",
+ "miow 0.3.6",
  "ntapi",
  "winapi 0.3.9",
 ]
@@ -1823,9 +1823,9 @@ dependencies = [
 
 [[package]]
 name = "miow"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07b88fb9795d4d36d62a012dfbf49a8f5cf12751f36d31a9dbe66d528e58979e"
+checksum = "5a33c1b55807fbed163481b5ba66db4b2fa6cde694a5027be10fb724206c5897"
 dependencies = [
  "socket2",
  "winapi 0.3.9",
@@ -2812,9 +2812,9 @@ checksum = "c111b5bd5695e56cffe5129854aa230b39c93a305372fdbb2668ca2394eea9f8"
 
 [[package]]
 name = "smallvec"
-version = "1.4.2"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbee7696b84bbf3d89a1c2eccff0850e3047ed46bfcd2e92c29a2d074d57e252"
+checksum = "7acad6f34eb9e8a259d3283d1e8c1d34d7415943d4895f65cc73813c7396fc85"
 
 [[package]]
 name = "snap"
@@ -3034,7 +3034,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "memchr",
- "mio 0.7.5",
+ "mio 0.7.6",
  "num_cpus",
  "parking_lot 0.11.0",
  "pin-project-lite",
@@ -3751,7 +3751,7 @@ dependencies = [
 [[package]]
 name = "web3"
 version = "0.14.0"
-source = "git+https://github.com/vorot93/rust-web3?branch=uncle-block-fix#24e27a75127080aa55fea025b69b2e8423ddff3d"
+source = "git+https://github.com/vorot93/rust-web3?branch=dev#b91fbb6b64bcab847497df1fde7b52c264bb0ab4"
 dependencies = [
  "arrayvec",
  "base64 0.13.0",
@@ -3767,6 +3767,7 @@ dependencies = [
  "log",
  "native-tls",
  "parking_lot 0.11.0",
+ "pin-project 1.0.1",
  "rlp",
  "rustc-hex",
  "secp256k1",
