@@ -11,6 +11,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
+use bytes::Bytes;
 use clap::Clap;
 use devp2p::*;
 use educe::Educe;
@@ -316,6 +317,12 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                                 peer_id: peer.as_fixed_bytes().to_vec(),
                             })
                             .await;
+                    }
+                    Some(MessageId::GetPooledTransactions) if valid_peer => {
+                        return Ok(Some(Message {
+                            id: MessageId::PooledTransactions.to_usize().unwrap(),
+                            data: Bytes::from_static(&rlp::EMPTY_LIST_RLP),
+                        }));
                     }
                     _ => {}
                 }
