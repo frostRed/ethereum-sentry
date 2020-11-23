@@ -169,7 +169,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
     }
 
     pub fn connected_peers(&self) -> usize {
-        self.peer_pipes.read().len()
+        self.valid_peers.read().len()
     }
 
     #[instrument(skip(self))]
