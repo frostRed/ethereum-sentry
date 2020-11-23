@@ -179,8 +179,8 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
         event: InboundEvent,
     ) -> Result<Option<Message>, DisconnectReason> {
         match event {
-            InboundEvent::Disconnect { .. } => {
-                debug!("Spinning down peer");
+            InboundEvent::Disconnect { reason } => {
+                debug!("Peer disconnect (reason: {:?}), tearing down peer.", reason);
                 self.teardown_peer(peer);
             }
             InboundEvent::Message {
