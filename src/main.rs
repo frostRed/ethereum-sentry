@@ -460,6 +460,16 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(discv4_opts) = opts.discv4 {
         info!("Starting discv4 at port {}", discv4_opts.port);
+
+        let bootstrap_nodes = discv4_opts
+            .bootnodes
+            .into_iter()
+            .map(|Dicv4NR(nr)| nr)
+            .collect::<Vec<_>>();
+
+        if bootstrap_nodes.is_empty() {
+            warn!("discv4 cannot work without bootstrap nodes!");
+        }
         discovery_tasks.insert(
             "discv4".to_string(),
             Box::pin(
@@ -470,11 +480,7 @@ async fn main() -> anyhow::Result<()> {
                         discv4::Node::new(
                             format!("0.0.0.0:{}", discv4_opts.port).parse().unwrap(),
                             secret_key,
-                            discv4_opts
-                                .bootnodes
-                                .into_iter()
-                                .map(|Dicv4NR(nr)| nr)
-                                .collect(),
+                            bootstrap_nodes,
                             None,
                             true,
                             opts.listen_port,
