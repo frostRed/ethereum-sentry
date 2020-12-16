@@ -50,19 +50,6 @@ mod grpc;
 mod services;
 mod types;
 
-#[derive(Debug)]
-struct DummyControl;
-
-#[async_trait]
-impl Control for DummyControl {
-    async fn forward_inbound_message(&self, _: InboundMessage) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn get_status_data(&self) -> anyhow::Result<StatusData> {
-        bail!("Not implemented")
-    }
-}
-
 type OutboundSender = Sender<OutboundEvent>;
 type OutboundReceiver = Arc<AsyncMutex<BoxStream<'static, OutboundEvent>>>;
 
@@ -530,18 +517,28 @@ async fn main() -> anyhow::Result<()> {
 
     let tasks = Arc::new(TaskGroup::new());
 
-    let data_provider: Arc<dyn DataProvider> = if let Some(addr) = opts.web3_addr {
-        if addr.scheme() != "http" && addr.scheme() != "https" {
-            bail!(
-                "Invalid web3 data provider URL: {}. Should start with http:// or https://.",
-                addr
-            );
+    let data_provider: Arc<dyn DataProvider> = match opts.data_provider {
+        DataProviderSettings::Dummy => Arc::new(DummyDataProvider),
+        DataProviderSettings::Tarpc { addr } => {
+            let addr = addr.to_string();
+            info!("Using tarpc data provider at {}", addr);
+            Arc::new(
+                TarpcDataProvider::new(addr)
+                    .await
+                    .context("Failed to start tarpc data provider")?,
+            )
         }
-        let addr = addr.to_string();
-        info!("Using web3 data provider at {}", addr);
-        Arc::new(Web3DataProvider::new(addr).context("Failed to start web3 data provider")?)
-    } else {
-        Arc::new(DummyDataProvider)
+        DataProviderSettings::JsonRpc { addr } => {
+            if addr.scheme() != "http" && addr.scheme() != "https" {
+                bail!(
+                    "Invalid JSONRPC data provider URL: {}. Should start with http:// or https://.",
+                    addr
+                );
+            }
+            let addr = addr.to_string();
+            info!("Using JSONRPC data provider at {}", addr);
+            Arc::new(Web3DataProvider::new(addr).context("Failed to start JSONRPC data provider")?)
+        }
     };
     let control: Arc<dyn Control> = if let Some(addr) = opts.control_addr {
         Arc::new(GrpcControl::connect(addr.to_string()).await?)
