@@ -56,7 +56,7 @@ pub struct Discv5Config {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum DataProviderSettings {
     Dummy,
     Tarpc { addr: Url },
