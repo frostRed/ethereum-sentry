@@ -9,9 +9,10 @@ license = "Apache-2.0"
 [dependencies]
 anyhow = "1"
 arrayvec = "0.5"
+async-stream = "0.3"
 async-trait = "0.1"
 auto_impl = "0.4"
-bytes = "0.6"
+bytes = "1"
 cidr = "0.1"
 clap = "3.0.0-beta.2"
 derive_more = "0.99"
@@ -42,12 +43,13 @@ secp256k1 = { version = "0.19", features = ["endomorphism", "global-context", "r
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = "1"
-stubborn-io = "0.2"
+stubborn-io = { git = "https://github.com/vorot93/stubborn-io", branch = "tokio-1" }
 tarpc = { version = "0.23", features = ["full"] }
 task-group = { git = "https://github.com/vorot93/task-group" }
-tokio = { version = "0.3", features = ["full"] }
-tokio-compat-02 = "0.1"
-tokio-serde = { version = "0.6", features = ["bincode"] }
+tokio = { version = "1", features = ["full"] }
+tokio-compat-02 = { git = "https://github.com/vorot93/tokio-compat-02", branch = "vorot93/tokio-1" }
+tokio-serde = { version = "0.8", features = ["bincode"] }
+tokio-stream = "0.1"
 toml = "0.5"
 tonic = { version = "0.3", features = ["tls"] }
 tonic-health = "0.2"
@@ -63,3 +65,6 @@ tonic-build = "0.3"
 
 [dev-dependencies]
 rand = "0.7"
+
+[patch.crates-io]
+tarpc = { git = "https://github.com/google/tarpc" }

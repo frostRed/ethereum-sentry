@@ -10,7 +10,7 @@ use devp2p::*;
 use futures::stream::FuturesUnordered;
 use num_traits::ToPrimitive;
 use std::{convert::identity, fmt::Debug, sync::Arc};
-use tokio::stream::StreamExt;
+use tokio_stream::StreamExt;
 use tonic::Response;
 
 #[derive(Clone, Debug)]

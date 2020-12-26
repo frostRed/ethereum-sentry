@@ -6,6 +6,7 @@ use std::fmt::Display;
 use stubborn_io::{ReconnectOptions, StubbornTcpStream};
 use tarpc::{client::Config, serde_transport::Transport};
 use tokio_serde::formats::*;
+use tokio_stream::empty;
 
 #[derive(Debug)]
 pub struct TarpcDataProvider {
@@ -38,13 +39,13 @@ impl DataProvider for TarpcDataProvider {
         &self,
         _: Vec<super::BlockId>,
     ) -> futures::stream::BoxStream<anyhow::Result<ethereum::Header>> {
-        Box::pin(tokio::stream::empty())
+        Box::pin(empty())
     }
 
     fn get_block_bodies(
         &self,
         _: Vec<ethereum_types::H256>,
     ) -> futures::stream::BoxStream<anyhow::Result<super::BlockBody>> {
-        Box::pin(tokio::stream::empty())
+        Box::pin(empty())
     }
 }

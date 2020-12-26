@@ -10,6 +10,7 @@ use crate::{
     services::*,
 };
 use anyhow::{anyhow, bail, Context};
+use async_stream::stream;
 use async_trait::async_trait;
 use bytes::Bytes;
 use clap::Clap;
@@ -31,7 +32,6 @@ use std::{
 };
 use task_group::TaskGroup;
 use tokio::{
-    stream::{StreamExt, StreamMap},
     sync::{
         mpsc::{channel, Sender},
         Mutex as AsyncMutex,
@@ -39,6 +39,7 @@ use tokio::{
     time::sleep,
 };
 use tokio_compat_02::FutureExt;
+use tokio_stream::{StreamExt, StreamMap};
 use tonic::transport::Server;
 use tracing::*;
 use tracing_subscriber::EnvFilter;
@@ -349,13 +350,20 @@ impl<C: Control, DP: DataProvider> CapabilityServer for CapabilityServerImpl<C, 
             }]
         };
 
-        let (sender, receiver) = channel(1);
-        let receiver = Box::pin(tokio::stream::iter(first_events).chain(receiver));
+        let (sender, mut receiver) = channel(1);
         self.setup_peer(
             peer,
             Pipes {
                 sender,
-                receiver: Arc::new(AsyncMutex::new(receiver)),
+                receiver: Arc::new(AsyncMutex::new(Box::pin(stream! {
+                    for event in first_events {
+                        yield event;
+                    }
+
+                    while let Some(event) = receiver.recv().await {
+                        yield event;
+                    }
+                }))),
             },
         );
     }

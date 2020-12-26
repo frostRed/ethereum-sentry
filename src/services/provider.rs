@@ -10,8 +10,8 @@ use rlp_derive::{RlpDecodable, RlpEncodable};
 use serde::Deserialize;
 use serde_json::json;
 use std::fmt::Debug;
-use tokio::stream::StreamExt;
 use tokio_compat_02::FutureExt;
+use tokio_stream::StreamExt;
 use tracing::*;
 
 mod dummy;
