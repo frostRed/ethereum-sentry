@@ -410,10 +410,13 @@ async fn main() -> anyhow::Result<()> {
         toml::from_str::<Config>(&std::fs::read_to_string(Opts::parse().config_path).unwrap())
             .unwrap();
 
-    let secret_key = if let Some(data) = opts.node_key {
-        SecretKey::from_slice(&hex::decode(data)?)?
+    let secret_key;
+    if let Some(data) = opts.node_key {
+        secret_key = SecretKey::from_slice(&hex::decode(data)?)?;
+        info!("Loaded node key from config");
     } else {
-        SecretKey::new(&mut secp256k1::rand::thread_rng())
+        secret_key = SecretKey::new(&mut secp256k1::rand::thread_rng());
+        info!("Generated new node key: {}", secret_key);
     };
 
     let listen_addr = format!("0.0.0.0:{}", opts.listen_port);
