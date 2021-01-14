@@ -1,27 +1,17 @@
 use crate::eth::StatusData;
-use anyhow::{anyhow, bail, Context};
+use anyhow::bail;
 use async_trait::async_trait;
 use auto_impl::auto_impl;
-use ethereum::{Header, Transaction, TransactionAction, TransactionSignature};
-use ethereum_types::{H256, U64};
-use futures::stream::{BoxStream, FuturesOrdered};
+use ethereum::{Header, Transaction};
+use ethereum_types::H256;
+use futures::stream::BoxStream;
 use rlp::{Decodable, DecoderError, Encodable, Rlp};
 use rlp_derive::{RlpDecodable, RlpEncodable};
-use serde::Deserialize;
-use serde_json::json;
 use std::fmt::Debug;
-use tokio_compat_02::FutureExt;
-use tokio_stream::StreamExt;
-use tracing::*;
 
 mod dummy;
-pub use dummy::*;
-
 mod tarpc;
-pub use self::tarpc::*;
-
-mod web3;
-pub use self::web3::*;
+pub use self::{dummy::*, tarpc::*};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockId {
@@ -44,15 +34,6 @@ impl Encodable for BlockId {
         match self {
             Self::Hash(v) => Encodable::rlp_append(v, s),
             Self::Number(v) => Encodable::rlp_append(v, s),
-        }
-    }
-}
-
-impl From<BlockId> for ::web3::types::BlockId {
-    fn from(id: BlockId) -> Self {
-        match id {
-            BlockId::Hash(hash) => Self::Hash(hash),
-            BlockId::Number(number) => U64::from(number).into(),
         }
     }
 }

@@ -60,7 +60,6 @@ pub struct Discv5Config {
 pub enum DataProviderSettings {
     Dummy,
     Tarpc { addr: Url },
-    JsonRpc { addr: Url },
 }
 
 #[derive(Educe, Deserialize)]

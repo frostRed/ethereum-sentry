@@ -9,7 +9,7 @@ use crate::{
     },
     services::*,
 };
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, Context};
 use async_stream::stream;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -193,7 +193,7 @@ impl<C: Control, DP: DataProvider> CapabilityServerImpl<C, DP> {
                         let status_data = self.status_message.read();
                         let mut valid_peers = self.valid_peers.write();
                         if let Some((_, fork_filter)) = &*status_data {
-                            fork_filter.is_compatible(v.fork_id).map_err(|reason| {
+                            fork_filter.validate(v.fork_id).map_err(|reason| {
                                 debug!("Kicking peer with incompatible fork ID: {:?}", reason);
 
                                 DisconnectReason::UselessPeer
@@ -438,13 +438,10 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(dnsdisc_opts) = opts.dnsdisc {
         info!("Starting DNS discovery fetch from {}", dnsdisc_opts.address);
-        let dns_resolver = dnsdisc::Resolver::new(Arc::new(
-            async {
-                TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()).await
-            }
-            .compat()
-            .await?,
-        ));
+        let dns_resolver = dnsdisc::Resolver::new(Arc::new(TokioAsyncResolver::tokio(
+            ResolverConfig::default(),
+            ResolverOpts::default(),
+        )?));
 
         discovery_tasks.insert(
             "dnsdisc".to_string(),
@@ -496,7 +493,7 @@ async fn main() -> anyhow::Result<()> {
                 .enr
                 .ok_or_else(|| anyhow!("discv5 ENR not specified"))?,
             discv5::enr::CombinedKey::Secp256k1(
-                k256::ecdsa::SigningKey::new(secret_key.as_ref()).unwrap(),
+                k256::ecdsa::SigningKey::from_bytes(secret_key.as_ref()).unwrap(),
             ),
             Default::default(),
         )
@@ -538,17 +535,6 @@ async fn main() -> anyhow::Result<()> {
                     .await
                     .context("Failed to start tarpc data provider")?,
             )
-        }
-        DataProviderSettings::JsonRpc { addr } => {
-            if addr.scheme() != "http" && addr.scheme() != "https" {
-                bail!(
-                    "Invalid JSONRPC data provider URL: {}. Should start with http:// or https://.",
-                    addr
-                );
-            }
-            let addr = addr.to_string();
-            info!("Using JSONRPC data provider at {}", addr);
-            Arc::new(Web3DataProvider::new(addr).context("Failed to start JSONRPC data provider")?)
         }
     };
     let control: Arc<dyn Control> = if let Some(addr) = opts.control_addr {
