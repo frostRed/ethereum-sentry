@@ -6,7 +6,6 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use auto_impl::auto_impl;
 use std::fmt::Debug;
-use tokio_compat_02::FutureExt;
 use tonic::transport::Channel;
 
 mod dummy;

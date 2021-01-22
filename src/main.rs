@@ -38,7 +38,6 @@ use tokio::{
     },
     time::sleep,
 };
-use tokio_compat_02::FutureExt;
 use tokio_stream::{StreamExt, StreamMap};
 use tonic::transport::Server;
 use tracing::*;
@@ -642,7 +641,6 @@ async fn main() -> anyhow::Result<()> {
         Server::builder()
             .add_service(svc)
             .serve(sentry_addr)
-            .compat()
             .await
             .unwrap();
     });

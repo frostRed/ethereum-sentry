@@ -90,11 +90,11 @@ impl DataProvider for TarpcDataProvider {
                             .await?
                             .map_err(anyhow::Error::msg)?,
                     } {
-                        return Ok(client
+                        return client
                             .header(context::current(), hash)
                             .await?
                             .map_err(anyhow::Error::msg)?
-                            .context("not found")?);
+                            .context("not found");
                     }
 
                     bail!("not found")

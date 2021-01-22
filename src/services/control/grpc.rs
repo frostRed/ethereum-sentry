@@ -8,7 +8,7 @@ pub struct GrpcControl {
 impl GrpcControl {
     pub async fn connect(addr: String) -> anyhow::Result<Self> {
         Ok(Self {
-            client: ControlClient::connect(addr).compat().await?,
+            client: ControlClient::connect(addr).await?,
         })
     }
 }
