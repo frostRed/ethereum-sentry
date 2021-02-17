@@ -1,0 +1,44 @@
+[package]
+name = "discv4"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = [
+    "Artem Vorotnikov <artem@vorotnikov.me>",
+    "Wei Tang <hi@that.world>",
+]
+description = "Ethereum's Node Discovery v4."
+repository = "https://github.com/rust-ethereum/discv4"
+edition = "2018"
+
+[dependencies]
+anyhow = "1"
+array-init = "1"
+arrayref = "0.3"
+arrayvec = "0.5"
+async-trait = "0.1"
+bytes = "1"
+chrono = "0.4"
+enum-primitive-derive = "0.2"
+futures-util = "0.3"
+hex = "0.4.2"
+igd = { version = "0.12", features = ["aio"] }
+num-traits = "0.2"
+parking_lot = "0.11"
+plain_hasher = "0.2"
+primitive-types = { version = "0.9", features = ["rlp"] }
+rand = "0.8"
+rlp = "0.5"
+rlp-derive = "0.1"
+secp256k1 = { version = "0.20", features = ["global-context", "recovery"] }
+sha3 = "0.9"
+task-group = { git = "https://github.com/vorot93/task-group" }
+thiserror = "1"
+tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
+tracing = "0.1"
+tracing-futures = "0.2"
+url = "2"
+
+[dev-dependencies]
+secp256k1 = "0.20"
+tokio = { version = "1", features = ["full"] }
+tracing-subscriber = "0.2"

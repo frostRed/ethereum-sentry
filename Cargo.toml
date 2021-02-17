@@ -5,6 +5,7 @@ authors = ["Artem Vorotnikov <artem@vorotnikov.me>"]
 edition = "2018"
 description = "Sentry that connects to Ethereum network"
 license = "Apache-2.0"
+publish = false
 
 [dependencies]
 anyhow = "1"
@@ -16,10 +17,10 @@ bytes = "1"
 cidr = "0.1"
 clap = "3.0.0-beta.2"
 derive_more = "0.99"
-devp2p = { git = "https://github.com/rust-ethereum/devp2p", features = ["discv4", "discv5", "dnsdisc"] }
-discv4 = { git = "https://github.com/rust-ethereum/discv4" }
+devp2p = { path = "devp2p", features = ["discv4", "discv5", "dnsdisc"] }
+discv4 = { path = "discv4" }
 discv5 = { git = "https://github.com/vorot93/discv5", branch = "dev" }
-dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust-dns"] }
+dnsdisc = { path = "dnsdisc", features = ["trust-dns"] }
 educe = { version = "0.4", features = ["Debug", "Default"] }
 enr = { git = "https://github.com/rust-ethereum/enr", default-features = false, features = ["rust-secp256k1"] }
 enum-primitive-derive = "0.2"
@@ -64,3 +65,10 @@ tonic-build = "0.4"
 
 [dev-dependencies]
 rand = "0.8"
+
+[workspace]
+members = [
+    "devp2p",
+    "discv4",
+    "dnsdisc",
+]

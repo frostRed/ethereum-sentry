@@ -522,8 +522,7 @@ dependencies = [
 
 [[package]]
 name = "devp2p"
-version = "0.3.1"
-source = "git+https://github.com/rust-ethereum/devp2p#3c13e9b5e524fa80ca01ea921a385ac0bfbc1c37"
+version = "0.4.0"
 dependencies = [
  "aes",
  "aes-ctr",
@@ -550,6 +549,7 @@ dependencies = [
  "futures-intrusive",
  "generic-array",
  "hex",
+ "hex-literal",
  "hmac",
  "maplit",
  "num-traits",
@@ -568,6 +568,8 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-futures",
+ "tracing-subscriber",
+ "trust-dns-resolver",
  "uuid",
 ]
 
@@ -583,7 +585,6 @@ dependencies = [
 [[package]]
 name = "discv4"
 version = "0.1.0"
-source = "git+https://github.com/rust-ethereum/discv4#59a6c5140dafeec890b74472ba6f4807895fa845"
 dependencies = [
  "anyhow",
  "array-init",
@@ -610,6 +611,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-futures",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -647,7 +649,6 @@ dependencies = [
 [[package]]
 name = "dnsdisc"
 version = "0.1.0"
-source = "git+https://github.com/rust-ethereum/dnsdisc#1064fa190a761e99501459e6324094e944491090"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -660,6 +661,7 @@ dependencies = [
  "educe",
  "enr",
  "hex",
+ "k256",
  "maplit",
  "sha3",
  "task-group",
@@ -668,6 +670,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-futures",
+ "tracing-subscriber",
  "trust-dns-resolver",
 ]
 
@@ -821,10 +824,11 @@ dependencies = [
 
 [[package]]
 name = "ethereum"
-version = "0.6.0"
-source = "git+https://github.com/rust-blockchain/ethereum#c5813a82e9760cbb15db9677de7716bd33cd8d6a"
+version = "0.7.0"
+source = "git+https://github.com/rust-blockchain/ethereum#0f20a969816ea34054b43f2c38b9ea5d3837e3a7"
 dependencies = [
  "ethereum-types",
+ "funty",
  "hash-db",
  "hash256-std-hasher",
  "rlp",
@@ -1575,9 +1579,9 @@ checksum = "2a60c7ce501c71e03a9c9c0d35b861413ae925bd979cc7a4e30d060069aaac8d"
 
 [[package]]
 name = "mio"
-version = "0.7.7"
+version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e50ae3f04d169fcc9bde0b547d1c205219b7157e07ded9c5aff03e0637cb3ed7"
+checksum = "dc250d6848c90d719ea2ce34546fb5df7af1d3fd189d10bf7bad80bfcebecd95"
 dependencies = [
  "libc",
  "log",
