@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::upper_case_acronyms)]
 
 use crate::{
     config::*,

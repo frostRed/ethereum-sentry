@@ -18,15 +18,16 @@ clap = "3.0.0-beta.2"
 derive_more = "0.99"
 devp2p = { git = "https://github.com/rust-ethereum/devp2p", features = ["discv4", "discv5", "dnsdisc"] }
 discv4 = { git = "https://github.com/rust-ethereum/discv4" }
-discv5 = { git = "https://github.com/vorot93/discv5", branch = "bytes" }
+discv5 = { git = "https://github.com/vorot93/discv5", branch = "dev" }
 dnsdisc = { git = "https://github.com/rust-ethereum/dnsdisc", features = ["trust-dns"] }
 educe = { version = "0.4", features = ["Debug", "Default"] }
 enr = { git = "https://github.com/rust-ethereum/enr", default-features = false, features = ["rust-secp256k1"] }
 enum-primitive-derive = "0.2"
 ethereum = { git = "https://github.com/rust-blockchain/ethereum", default-features = false }
-ethereum-forkid = "0.4"
+ethereum-forkid = "0.5"
 ethereum-tarpc-api = { git = "https://github.com/rust-ethereum/tarpc-api" }
-ethereum-types = { version = "0.10", default-features = false }
+ethereum-types = { version = "0.11", default-features = false }
+funty = "<1.2"
 futures = "0.3"
 hex = "0.4"
 hex-literal = "0.3"
